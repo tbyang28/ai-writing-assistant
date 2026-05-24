@@ -11,7 +11,7 @@ const showSidebar = computed(() => route.path !== '/auth')
   <div class="h-screen flex flex-col bg-gray-50 overflow-hidden">
     <div class="flex-1 flex min-h-0">
       <Sidebar v-if="showSidebar" />
-      <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <RouterView />
       </main>
     </div>

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import User, Book, Chapter, Outline, Character, Inspiration
+from app.services.rag_service import index_chapter
 from app.schemas.book import (
     BookCreate, BookUpdate, BookListResponse, BookResponse, BookStats,
     ChapterCreate, ChapterUpdate, ChapterSave, ChapterResponse,
@@ -304,6 +305,8 @@ async def save_chapter(
     if data.content is not None:
         chapter.content = data.content
         chapter.word_count = len(data.content.replace(" ", "").replace("\n", ""))
+        # 自动索引：将章节内容向量化，用于 RAG 语义搜索
+        await index_chapter(db, chapter.id, data.content, chapter.book_id)
 
     # 更新书籍总字数
     book_result = await db.execute(select(Book).where(Book.id == chapter.book_id))

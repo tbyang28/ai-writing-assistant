@@ -122,6 +122,70 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  async function streamWrite(bookId: string, content: string, command: string, onToken: (text: string) => void, selectedText?: string) {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/ai/write/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          book_id: bookId,
+          content,
+          command,
+          selected_text: selectedText,
+        }),
+      })
+
+      // 用 Streams API 读取 SSE 流，一段一段解析
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No reader available')
+
+      const decoder = new TextDecoder()
+      let fullText = ''
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        // 把二进制数据解码成字符串
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''  // 最后一行可能不完整，留到下轮处理
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const dataStr = trimmed.slice(6)
+          if (dataStr === '[DONE]') continue
+
+          try {
+            const parsed = JSON.parse(dataStr)
+            if (parsed.type === 'token') {
+              const text = parsed.data?.text || ''
+              fullText += text
+              onToken(text)  // 回调：每收到一个字就通知前端更新
+            }
+          } catch { /* 跳过解析失败的 chunk */ }
+        }
+      }
+
+      lastResponse.value = { answer: fullText }
+      return { answer: fullText }
+    } catch (err: any) {
+      error.value = err.message || '流式响应失败'
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function write(bookId: string, content: string, command: string, selectedText?: string) {
     isLoading.value = true
     error.value = null
@@ -133,8 +197,10 @@ export const useAiStore = defineStore('ai', () => {
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = res.data
-      lastResponse.value = data.data || data
-      return lastResponse.value
+      const result = data.data || data
+      const answer = result.answer || result.suggestion || ''
+      addMessage('assistant', answer)
+      return result
     } catch (err: any) {
       error.value = err.response?.data?.message || 'AI 写作辅助失败'
       return null
@@ -146,6 +212,6 @@ export const useAiStore = defineStore('ai', () => {
   return {
     isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages,
     setSelectedText, openPanel, closePanel, togglePanel, addMessage, clearChat,
-    sendMessage, streamChat, write,
+    sendMessage, streamChat, write, streamWrite,
   }
 })

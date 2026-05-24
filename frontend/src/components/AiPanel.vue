@@ -31,7 +31,18 @@ async function handleKeydown(e: KeyboardEvent) {
 
 async function runCommand(command: string) {
   if (!props.chapterContent) return
-  await aiStore.write(props.bookId, props.chapterContent, command)
+
+  // 先加入一个空白 AI 消息，流式输出会逐字填充它
+  aiStore.addMessage('assistant', '')
+
+  await aiStore.streamWrite(props.bookId, props.chapterContent, command, (chunk) => {
+    // 每收到一个字就追加到最后一条助手消息末尾
+    const msgs = aiStore.chatMessages
+    const last = msgs[msgs.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content += chunk
+    }
+  })
 }
 
 function applySuggestion(text: string) {
@@ -54,7 +65,7 @@ function handleStreamSend() {
 </script>
 
 <template>
-  <div class="w-80 bg-white border-l border-gray-200 flex flex-col">
+  <div class="bg-white border-l border-gray-200 flex flex-col h-full overflow-hidden shrink-0">
     <!-- Header -->
     <div class="h-12 flex items-center justify-between px-4 border-b border-gray-100">
       <span class="font-medium text-sm text-gray-900">AI 助手</span>
@@ -85,7 +96,7 @@ function handleStreamSend() {
     </div>
 
     <!-- Chat Messages -->
-    <div class="flex-1 overflow-y-auto p-3 space-y-3">
+    <div class="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
       <div v-if="aiStore.chatMessages.length === 0" class="text-center py-8">
         <p class="text-sm text-gray-400">在下方输入问题与 AI 对话</p>
         <p class="text-xs text-gray-300 mt-1">或使用快捷操作按钮</p>
@@ -115,14 +126,6 @@ function handleStreamSend() {
       </div>
     </div>
 
-    <!-- AI Response -->
-    <div v-if="aiStore.lastResponse && !aiStore.chatMessages.length" class="px-3 py-2 border-t border-gray-100 bg-gray-50">
-      <div class="text-xs text-gray-600 mb-1">AI 建议:</div>
-      <div class="text-sm text-gray-800 whitespace-pre-wrap">{{ aiStore.lastResponse.suggestion || aiStore.lastResponse.answer }}</div>
-      <button @click="applySuggestion(aiStore.lastResponse.suggestion || aiStore.lastResponse.answer)" class="mt-1 text-xs text-brand hover:text-brand-600">
-        应用建议
-      </button>
-    </div>
 
     <!-- Input -->
     <div class="border-t border-gray-100 p-3">

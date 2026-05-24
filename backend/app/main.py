@@ -7,12 +7,14 @@ from fastapi.responses import JSONResponse
 
 from app.database import init_db
 from app.routers import auth, books, ai
+from app.services.ai_service import close_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     yield
+    await close_client()
 
 
 app = FastAPI(

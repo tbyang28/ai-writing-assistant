@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBookStore, type Chapter, type Outline, type Character } from '@/stores/book'
 import { useAiStore } from '@/stores/ai'
@@ -18,6 +18,13 @@ const saveTimer = ref<any>(null)
 const saving = ref(false)
 const showOutline = ref(false)
 const showCharacters = ref(false)
+
+// Resizable panels
+const leftPanelWidth = ref(224)       // default: w-56 = 14rem = 224px
+const rightPanelWidth = ref(320)      // default: w-80 = 20rem = 320px
+const isDragging = ref<'left' | 'right' | null>(null)
+const dragStartX = ref(0)
+const dragStartWidth = ref(0)
 
 // New item modals
 const showNewChapterModal = ref(false)
@@ -135,15 +142,58 @@ async function deleteChapter(chapter: Chapter) {
 
 function applyAiText(text: string) {
   if (text) {
-    editorContent.value += '\n' + text
+    editorContent.value += text
   }
+}
+
+// === Auto-resize textarea ===
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+
+function autoResizeTextarea() {
+  const el = textareaRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+}
+
+watch(editorContent, () => {
+  nextTick(autoResizeTextarea)
+})
+
+// === Resizable panel drag ===
+function startDrag(e: MouseEvent, side: 'left' | 'right') {
+  isDragging.value = side
+  dragStartX.value = e.clientX
+  dragStartWidth.value = side === 'left' ? leftPanelWidth.value : rightPanelWidth.value
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+function onDrag(e: MouseEvent) {
+  if (!isDragging.value) return
+  const dx = e.clientX - dragStartX.value
+  if (isDragging.value === 'left') {
+    leftPanelWidth.value = Math.max(160, Math.min(400, dragStartWidth.value + dx))
+  } else {
+    rightPanelWidth.value = Math.max(240, Math.min(500, dragStartWidth.value - dx))
+  }
+}
+
+function stopDrag() {
+  isDragging.value = null
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
 }
 </script>
 
 <template>
-  <div class="flex-1 flex min-h-0">
+  <div class="flex-1 flex min-h-0 overflow-hidden">
     <!-- Left sidebar - chapters & outlines -->
-    <div class="w-56 bg-white border-r border-gray-200 flex flex-col shrink-0">
+    <div class="bg-white border-r border-gray-200 flex flex-col shrink-0" :style="{ width: leftPanelWidth + 'px' }">
       <!-- Book info -->
       <div class="p-3 border-b border-gray-100">
         <div class="flex items-center justify-between">
@@ -245,6 +295,14 @@ function applyAiText(text: string) {
       </div>
     </div>
 
+    <!-- Left resize handle -->
+    <div
+      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 shrink-0 relative bg-gray-100"
+      @mousedown.prevent="startDrag($event, 'left')"
+    >
+      <div class="absolute inset-y-0 left-0 w-px bg-gray-200"></div>
+    </div>
+
     <!-- Editor area -->
     <div class="flex-1 flex flex-col min-w-0 bg-white">
       <!-- Title bar -->
@@ -262,8 +320,9 @@ function applyAiText(text: string) {
       <div class="flex-1 overflow-auto">
         <div v-if="activeChapterId" class="max-w-3xl mx-auto p-6">
           <textarea
+            ref="textareaRef"
             v-model="editorContent"
-            class="w-full min-h-[70vh] text-base leading-relaxed text-gray-800 border-none outline-none resize-none bg-transparent font-serif"
+            class="w-full min-h-[300px] text-base leading-relaxed text-gray-800 border-none outline-none resize-none bg-transparent font-serif overflow-y-auto"
             placeholder="开始写作..."
           ></textarea>
         </div>
@@ -276,12 +335,22 @@ function applyAiText(text: string) {
       </div>
     </div>
 
+    <!-- Right resize handle -->
+    <div
+      v-if="aiStore.isPanelOpen"
+      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 shrink-0 relative bg-gray-100"
+      @mousedown.prevent="startDrag($event, 'right')"
+    >
+      <div class="absolute inset-y-0 right-0 w-px bg-gray-200"></div>
+    </div>
+
     <!-- AI Panel -->
     <AiPanel
       v-if="aiStore.isPanelOpen"
       :book-id="bookId"
       :chapter-content="editorContent"
       :chapter-id="activeChapterId || undefined"
+      :style="{ width: rightPanelWidth + 'px' }"
       @apply-text="applyAiText"
     />
 
