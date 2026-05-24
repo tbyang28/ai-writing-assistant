@@ -214,9 +214,7 @@ async def update_book(
 
     await db.commit()
     await db.refresh(book)
-    return BookResponse.model_validate(book)
-
-
+    return BookListResponse.model_validate(book)
 @router.delete("/books/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_book(
     book_id: str,

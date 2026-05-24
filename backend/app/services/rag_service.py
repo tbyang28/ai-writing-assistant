@@ -101,8 +101,12 @@ async def index_chapter(db: AsyncSession, chapter_id: str, content: str, book_id
     for i, chunk_text in enumerate(chunks):
         if not chunk_text.strip():
             continue
-        # 向量化
-        vec = await embed_text(chunk_text)
+        try:
+            # 向量化
+            vec = await embed_text(chunk_text)
+        except Exception:
+            # 向量化失败不阻塞保存，跳过后续索引
+            continue
         # 存入数据库
         doc = DocumentChunk(
             book_id=book_id,
