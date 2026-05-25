@@ -74,14 +74,21 @@ SYSTEM_PROMPTS = {
 async def call_siliconflow(
     messages: list[dict],
     stream: bool = False,
+    model: str | None = None,
 ) -> dict | AsyncGenerator[str, None]:
-    """调用 SiliconFlow API"""
+    """调用 SiliconFlow API
+
+    Args:
+        messages: 消息列表
+        stream: 是否流式输出
+        model: 模型 ID，为 None 时使用 settings.deepseek_model
+    """
     headers = {
         "Authorization": f"Bearer {settings.siliconflow_api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": settings.deepseek_model,
+        "model": model or settings.deepseek_model,
         "messages": messages,
         "stream": stream,
         "max_tokens": 4096,

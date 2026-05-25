@@ -8,6 +8,7 @@ class AiChatRequest(BaseModel):
     chapter_id: Optional[str] = None
     current_content: Optional[str] = None
     history: Optional[List[dict]] = None
+    model: Optional[str] = None  # SiliconFlow model ID, None = use default
 
 
 class AiWriteRequest(BaseModel):
@@ -16,6 +17,7 @@ class AiWriteRequest(BaseModel):
     command: str  # continue | improve | fix | summarize
     chapter_id: Optional[str] = None
     selected_text: Optional[str] = None
+    model: Optional[str] = None  # SiliconFlow model ID, None = use default
 
 
 class AiGenerateOutlineRequest(BaseModel):
@@ -24,6 +26,7 @@ class AiGenerateOutlineRequest(BaseModel):
     genre: Optional[str] = None
     chapter_count: Optional[int] = 5
     existing_outline: Optional[str] = None
+    model: Optional[str] = None  # SiliconFlow model ID, None = use default
 
 
 class AiResponse(BaseModel):

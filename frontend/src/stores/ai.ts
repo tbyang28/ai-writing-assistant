@@ -10,6 +10,8 @@ export const useAiStore = defineStore('ai', () => {
   const selectedText = ref('')
   const pendingInsert = ref<string | null>(null)
   const chatMessages = ref<Array<{ role: string; content: string }>>([])
+  // 当前选中的模型 ID（SiliconFlow model ID）
+  const selectedModel = ref<string | null>(null)
 
   function setSelectedText(text: string) {
     selectedText.value = text
@@ -40,6 +42,7 @@ export const useAiStore = defineStore('ai', () => {
         chapter_id: chapterId,
         current_content: currentContent,
         history: chatMessages.value.slice(-10, -1).map(m => ({ role: m.role, content: m.content })),
+        model: selectedModel.value || undefined,
       }, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -76,6 +79,7 @@ export const useAiStore = defineStore('ai', () => {
           chapter_id: chapterId,
           current_content: currentContent,
           history: chatMessages.value.slice(-10, -1).map(m => ({ role: m.role, content: m.content })),
+          model: selectedModel.value || undefined,
         }),
       })
 
@@ -139,6 +143,7 @@ export const useAiStore = defineStore('ai', () => {
           content,
           command,
           selected_text: selectedText,
+          model: selectedModel.value || undefined,
         }),
       })
 
@@ -193,6 +198,7 @@ export const useAiStore = defineStore('ai', () => {
       const token = localStorage.getItem('token')
       const res = await axios.post('/api/ai/write', {
         book_id: bookId, content, command, selected_text: selectedText,
+        model: selectedModel.value || undefined,
       }, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -210,7 +216,7 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   return {
-    isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages,
+    isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages, selectedModel,
     setSelectedText, openPanel, closePanel, togglePanel, addMessage, clearChat,
     sendMessage, streamChat, write, streamWrite,
   }

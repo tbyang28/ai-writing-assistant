@@ -2,6 +2,14 @@
 import { ref, watch, nextTick } from 'vue'
 import { useAiStore } from '@/stores/ai'
 
+// 可选模型列表（显示名 → SiliconFlow model ID）
+const MODEL_OPTIONS = [
+  { label: 'DeepSeek-V4-Flash', value: 'deepseek-ai/DeepSeek-V4-Flash' },
+  { label: 'DeepSeek-V3.2', value: 'deepseek-ai/DeepSeek-V3.2' },
+  { label: 'GLM-4.7', value: 'zai-org/GLM-4.7' },
+  { label: 'MiniMax-M2.5', value: 'MiniMaxAI/MiniMax-M2.5' },
+]
+
 const props = defineProps<{
   bookId: string
   chapterContent?: string
@@ -67,9 +75,18 @@ function handleStreamSend() {
 <template>
   <div class="bg-white border-l border-gray-200 flex flex-col h-full overflow-hidden shrink-0">
     <!-- Header -->
-    <div class="h-12 flex items-center justify-between px-4 border-b border-gray-100">
-      <span class="font-medium text-sm text-gray-900">AI 助手</span>
-      <button @click="aiStore.closePanel()" class="text-gray-400 hover:text-gray-600">
+    <div class="h-12 flex items-center justify-between gap-2 px-3 border-b border-gray-100">
+      <div class="flex items-center gap-1 min-w-0">
+        <span class="font-medium text-sm text-gray-900 shrink-0">AI 助手</span>
+        <select v-model="aiStore.selectedModel"
+          class="text-xs border border-gray-200 rounded-md px-1.5 py-1 bg-gray-50 text-gray-600 focus:outline-none focus:ring-1 focus:ring-brand max-w-[120px] truncate">
+          <option :value="null">默认模型</option>
+          <option v-for="opt in MODEL_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+      </div>
+      <button @click="aiStore.closePanel()" class="text-gray-400 hover:text-gray-600 shrink-0">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>

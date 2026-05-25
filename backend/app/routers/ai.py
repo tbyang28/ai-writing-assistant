@@ -55,7 +55,7 @@ async def ai_chat(
             user_msg = f"当前章节内容：\n{data.current_content[:2000]}\n\n用户问题：\n{data.message}"
 
         messages = build_messages("chat", user_msg, data.history)
-        result = await call_siliconflow(messages, stream=False)
+        result = await call_siliconflow(messages, stream=False, model=data.model)
         return {"data": result}
     except Exception as e:
         traceback.print_exc()
@@ -78,7 +78,7 @@ async def ai_chat_stream(
                 user_msg = f"当前章节内容：\n{data.current_content[:2000]}\n\n用户问题：\n{data.message}"
 
             messages = build_messages("chat", user_msg, data.history)
-            async for chunk in await call_siliconflow(messages, stream=True):
+            async for chunk in await call_siliconflow(messages, stream=True, model=data.model):
                 yield f"data: {json.dumps({'type': 'token', 'data': {'text': chunk}})}\n\n"
 
             yield f"data: {json.dumps({'type': 'done', 'data': {}})}\n\n"
@@ -129,7 +129,7 @@ async def ai_write(
             user_msg = content[:3000]
 
         messages = build_messages(command, user_msg)
-        result = await call_siliconflow(messages, stream=False)
+        result = await call_siliconflow(messages, stream=False, model=data.model)
         return {"data": result}
     except Exception as e:
         traceback.print_exc()
@@ -166,7 +166,7 @@ async def ai_write_stream(
                 user_msg = content[:3000]
 
             messages = build_messages(command, user_msg)
-            async for chunk in await call_siliconflow(messages, stream=True):
+            async for chunk in await call_siliconflow(messages, stream=True, model=data.model):
                 yield f"data: {json.dumps({'type': 'token', 'data': {'text': chunk}})}\n\n"
 
             yield f"data: {json.dumps({'type': 'done', 'data': {}})}\n\n"
@@ -206,7 +206,7 @@ async def ai_generate_outline(
         user_msg += "\n请为我生成详细的小说大纲。"
 
         messages = build_messages("outline", user_msg)
-        result = await call_siliconflow(messages, stream=False)
+        result = await call_siliconflow(messages, stream=False, model=data.model)
         return {"data": result}
     except Exception as e:
         traceback.print_exc()
