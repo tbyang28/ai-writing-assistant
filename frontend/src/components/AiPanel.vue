@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref } from 'vue'
 import { useAiStore } from '@/stores/ai'
 
 // 可选模型列表（显示名 → SiliconFlow model ID）
@@ -24,6 +24,8 @@ const emit = defineEmits<{
 
 const aiStore = useAiStore()
 const inputText = ref('')
+const isComposing = ref(false)
+const compositionPending = ref(false)
 const polishDiffResult = ref<Awaited<ReturnType<typeof aiStore.polishDiff>> | null>(null)
 
 async function sendMessage() {
@@ -33,7 +35,23 @@ async function sendMessage() {
   await aiStore.sendMessage(props.bookId, msg, props.chapterContent, props.chapterId)
 }
 
+function onCompositionEnd() {
+  isComposing.value = false
+  compositionPending.value = true
+  setTimeout(() => { compositionPending.value = false }, 300)
+}
+
 async function handleKeydown(e: KeyboardEvent) {
+  if (e.isComposing || isComposing.value) return
+  // IME composition 刚结束时浏览器可能合成一个 Enter keydown，
+  // 这里忽略该次事件，防止按空格选词时误触发发送。
+  if (compositionPending.value) {
+    compositionPending.value = false
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      return
+    }
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     await sendMessage()
@@ -248,6 +266,8 @@ function handleStreamSend() {
         <textarea
           v-model="inputText"
           @keydown="handleKeydown"
+          @compositionstart="isComposing = true"
+          @compositionend="onCompositionEnd"
           placeholder="输入问题..."
           rows="2"
           class="flex-1 text-sm border rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-brand/40 transition-colors"
