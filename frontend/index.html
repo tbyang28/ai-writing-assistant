@@ -5,6 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✍️</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 写作助手</title>
+    <script>
+      // 防止页面闪烁：在渲染前同步读取主题偏好
+      (function() {
+        const stored = localStorage.getItem('theme')
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (stored === 'dark' || (!stored && prefersDark)) {
+          document.documentElement.classList.add('dark')
+        }
+      })()
+    </script>
   </head>
   <body class="bg-gray-50 text-gray-900 antialiased">
     <div id="app"></div>

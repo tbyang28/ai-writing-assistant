@@ -3,11 +3,50 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --surface: #ffffff;
+    --surface-secondary: #f8fafc;
+    --surface-hover: #f1f5f9;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --border-clr: #e2e8f0;
+    --bg-page: #f8fafc;
+  }
+
+  .dark {
+    --surface: #1e293b;
+    --surface-secondary: #1a2332;
+    --surface-hover: #334155;
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #64748b;
+    --border-clr: #334155;
+    --bg-page: #0f172a;
+  }
+
   html, body {
     @apply h-full m-0 p-0;
   }
   body {
-    @apply bg-gray-50 text-gray-900;
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+  }
+
+  /* Scrollbar styling for dark mode */
+  .dark ::-webkit-scrollbar-track {
+    background: #1e293b;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 
@@ -19,32 +58,41 @@
   }
   .btn-secondary {
     @apply inline-flex items-center justify-center px-4 py-2 bg-white text-gray-700 rounded-lg font-medium text-sm
-           border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150;
+           border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150
+           dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600;
   }
   .btn-ghost {
     @apply inline-flex items-center justify-center px-3 py-1.5 text-sm text-gray-600 rounded-lg
-           hover:bg-gray-100 active:bg-gray-200 transition-colors duration-150;
+           hover:bg-gray-100 active:bg-gray-200 transition-colors duration-150
+           dark:text-gray-300 dark:hover:bg-gray-700 dark:active:bg-gray-600;
   }
   .form-input {
     @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
            focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand
-           placeholder:text-gray-400 transition-colors duration-150;
+           placeholder:text-gray-400 transition-colors duration-150
+           dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500;
   }
   .form-textarea {
     @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none
            focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand
-           placeholder:text-gray-400 transition-colors duration-150;
+           placeholder:text-gray-400 transition-colors duration-150
+           dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500;
   }
   .form-label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-sm font-medium mb-1;
+    color: var(--text-secondary);
   }
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+    @apply bg-white rounded-xl border shadow-sm;
+    background-color: var(--surface);
+    border-color: var(--border-clr);
   }
   .modal-overlay {
     @apply fixed inset-0 bg-black/30 flex items-center justify-center z-50;
   }
   .modal-content {
-    @apply bg-white rounded-2xl p-6 shadow-xl max-w-md w-full mx-4;
+    @apply rounded-2xl p-6 shadow-xl max-w-md w-full mx-4;
+    background-color: var(--surface);
+    color: var(--text-primary);
   }
 }

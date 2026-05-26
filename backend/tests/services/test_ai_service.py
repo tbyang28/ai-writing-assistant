@@ -6,7 +6,7 @@
 """
 import pytest
 
-from app.services.ai_service import build_messages, SYSTEM_PROMPTS
+from app.services.ai_service import build_messages, build_text_diff, summarize_diff, SYSTEM_PROMPTS
 
 
 class TestBuildMessages:
@@ -104,7 +104,7 @@ class TestBuildMessages:
 
     def test_system_prompts_have_all_required_keys(self):
         """所有必要的 system prompt key 都存在"""
-        required_keys = {"chat", "continue", "improve", "fix", "summarize", "outline"}
+        required_keys = {"chat", "continue", "improve", "polish_diff", "fix", "summarize", "outline"}
         assert required_keys.issubset(SYSTEM_PROMPTS.keys())
 
     def test_all_system_prompts_are_strings(self):
@@ -112,3 +112,20 @@ class TestBuildMessages:
         for key, prompt in SYSTEM_PROMPTS.items():
             assert isinstance(prompt, str)
             assert len(prompt) > 50, f"{key} 的 system prompt 太短了"
+
+
+class TestTextDiff:
+    def test_build_text_diff_for_replacement(self):
+        segments = build_text_diff("他慢慢的走进屋子。", "他缓缓走进屋子。")
+        assert {"type": "delete", "text": "慢慢的"} in segments
+        assert {"type": "insert", "text": "缓缓"} in segments
+
+    def test_summarize_diff_for_replace_pair(self):
+        segments = [
+            {"type": "equal", "text": "他"},
+            {"type": "delete", "text": "慢慢的"},
+            {"type": "insert", "text": "缓缓"},
+            {"type": "equal", "text": "走进屋子。"},
+        ]
+        summaries = summarize_diff(segments)
+        assert summaries[0] == "将「慢慢的」改为「缓缓」"

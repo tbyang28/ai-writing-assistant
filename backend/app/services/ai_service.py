@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from difflib import SequenceMatcher
 from typing import AsyncGenerator
 
 import httpx
@@ -14,10 +15,15 @@ _client: httpx.AsyncClient | None = None
 async def get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
+        # 使用 HTTPTransport 禁用系统代理
+        transport = httpx.AsyncHTTPTransport(
+            retries=2,
+        )
         _client = httpx.AsyncClient(
             timeout=httpx.Timeout(180.0, connect=15.0),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-            proxies={},  # 禁用代理，避免代理导致的连接问题
+            transport=transport,
+            trust_env=False,  # 禁用系统代理，避免代理导致 500
         )
     return _client
 
@@ -30,31 +36,48 @@ async def close_client():
 
 
 SYSTEM_PROMPTS = {
-    "chat": """你是一个专业的网文写作助手。你可以：
-1. 回答关于写作技巧、情节设计、角色塑造等问题
-2. 提供创作建议和改进方案
-3. 帮助作者拓展思路、完善剧情
+    "chat": """你是一个专业的网文写作引擎。根据用户的问题提供帮助。
 
-请用中文回答，语气友好专业，给出具体可操作的建议。""",
+如果用户要求你写小说、续写、润色或校对——请直接输出小说正文本身，不要添加分析、建议、说明文字。
 
-    "continue": """你是一个网文续写助手。根据已有的内容，自然地延续故事情节。
+如果是回答写作相关问题，用中文回答，语气友好专业，给出具体可操作的建议。""",
+
+    "continue": """你是小说续写引擎，不是聊天助手。你的唯一任务是输出续写的小说正文。
+
+【硬性规定——违反任何一条将导致回答作废】
+1. 只输出小说正文，不要对话、不要提问、不要建议
+2. 禁止出现：后续章节建议、本章关键点、大纲、章节标题、括号注释
+3. 禁止出现："我们可以这样写"、"下面继续"、"需要我如何调整"等任何与正文无关的语句
+4. 禁止出现：冒号引导的说明文字、分析性句子、元评论
+5. 续写的第一个字必须是小说正文的第一个字——没有前缀、没有引子、没有铺垫说明
+
+记住：你是一个没有感情的码字机，你的输出就是小说的直接延续。""",
+
+    "improve": """你是小说润色引擎，不是聊天助手。你的唯一任务是输出润色后的小说正文。
+
+【硬性规定——违反任何一条将导致回答作废】
+1. 只输出润色后的小说正文，不要对话、不要提问、不要建议
+2. 禁止出现：修改说明、改动说明、润色说明、前后对比
+3. 禁止出现："以下是润色后的内容"、"修改了以下地方"等元语句
+4. 禁止出现：冒号引导的说明文字、括号注释、关键点总结
+5. 输出的第一个字必须是正文的第一个字——没有前缀、没有引子、没有任何铺垫
+
+记住：你是一个没有感情的润色器，输出即润色结果本身。""",
+
+    "polish_diff": """你是小说润色引擎。你的唯一任务是输出润色后的小说正文。
+
 要求：
-1. 保持原有风格和视角
-2. 情节发展合理自然
-3. 语言流畅，有画面感
-4. 只输出续写的小说内容本身，不要任何分析、解释、前缀说明，直接输出文字""",
+1. 保留原文核心情节、人物关系、叙事视角和语气
+2. 优化病句、重复表达、节奏拖沓和不自然措辞
+3. 不要扩写成新情节，不要添加解释、标题、修改说明或前后对比
+4. 只输出润色后的正文，输出的第一个字必须是正文第一个字""",
 
-    "improve": """你是一个网文润色助手。对以下文本进行润色优化。
-要求：
-1. 保持原意和核心情节不变
-2. 优化表达，使语言更生动
-3. 修正语病和不自然的表达
-4. 只输出润色后的小说内容本身，不要任何分析、修改说明、前缀后缀，直接输出文字""",
+    "fix": """你是小说校对引擎。你的唯一任务是输出校对后的小说正文。
 
-    "fix": """你是一个网文校对助手。修正以下文本中的错别字、语法错误和标点问题。
-要求：
-1. 只修正错误，不改变原意和风格
-2. 只输出修正后的小说内容本身，不要任何前缀说明，直接输出文字""",
+【硬性规定——违反任何一条将导致回答作废】
+1. 只输出校对后的小说正文，不要输出任何额外的文字
+2. 禁止出现：修改说明、错误列表、前后对比、括号标注
+3. 输出的第一个字就是正文，没有前缀、没有说明、没有建议""",
 
     "summarize": """你是一个网文摘要助手。对以下内容进行简洁的概括。
 要求：
@@ -70,6 +93,64 @@ SYSTEM_PROMPTS = {
 
 请以清晰的格式输出。""",
 }
+
+
+def build_text_diff(original: str, revised: str) -> list[dict[str, str]]:
+    """Build a compact character-level diff for Chinese prose."""
+    matcher = SequenceMatcher(None, original, revised)
+    segments: list[dict[str, str]] = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            text = original[i1:i2]
+            if text:
+                segments.append({"type": "equal", "text": text})
+        elif tag == "delete":
+            text = original[i1:i2]
+            if text:
+                segments.append({"type": "delete", "text": text})
+        elif tag == "insert":
+            text = revised[j1:j2]
+            if text:
+                segments.append({"type": "insert", "text": text})
+        elif tag == "replace":
+            old_text = original[i1:i2]
+            new_text = revised[j1:j2]
+            if old_text:
+                segments.append({"type": "delete", "text": old_text})
+            if new_text:
+                segments.append({"type": "insert", "text": new_text})
+
+    return segments
+
+
+def summarize_diff(segments: list[dict[str, str]], limit: int = 6) -> list[str]:
+    """Create short human-readable change summaries for the UI."""
+    summaries: list[str] = []
+    i = 0
+    while i < len(segments) and len(summaries) < limit:
+        current = segments[i]
+        next_segment = segments[i + 1] if i + 1 < len(segments) else None
+
+        if current["type"] == "delete" and next_segment and next_segment["type"] == "insert":
+            old = current["text"].strip()
+            new = next_segment["text"].strip()
+            if old or new:
+                summaries.append(f"将「{old[:24]}」改为「{new[:24]}」")
+            i += 2
+            continue
+
+        if current["type"] == "delete":
+            text = current["text"].strip()
+            if text:
+                summaries.append(f"删除「{text[:24]}」")
+        elif current["type"] == "insert":
+            text = current["text"].strip()
+            if text:
+                summaries.append(f"新增「{text[:24]}」")
+        i += 1
+
+    return summaries
 
 
 async def call_siliconflow(

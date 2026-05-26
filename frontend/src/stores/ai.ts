@@ -13,6 +13,13 @@ export const useAiStore = defineStore('ai', () => {
   // 当前选中的模型 ID（SiliconFlow model ID）
   const selectedModel = ref<string | null>(null)
 
+  type PolishDiffResult = {
+    original: string
+    revised: string
+    segments: Array<{ type: 'equal' | 'insert' | 'delete'; text: string }>
+    summary: string[]
+  }
+
   function setSelectedText(text: string) {
     selectedText.value = text
   }
@@ -126,7 +133,7 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  async function streamWrite(bookId: string, content: string, command: string, onToken: (text: string) => void, selectedText?: string) {
+  async function streamWrite(bookId: string, content: string, command: string, onToken: (text: string) => void, selectedText?: string, chapterId?: string) {
     isLoading.value = true
     error.value = null
 
@@ -142,6 +149,7 @@ export const useAiStore = defineStore('ai', () => {
           book_id: bookId,
           content,
           command,
+          chapter_id: chapterId,
           selected_text: selectedText,
           model: selectedModel.value || undefined,
         }),
@@ -191,13 +199,13 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  async function write(bookId: string, content: string, command: string, selectedText?: string) {
+  async function write(bookId: string, content: string, command: string, selectedText?: string, chapterId?: string) {
     isLoading.value = true
     error.value = null
     try {
       const token = localStorage.getItem('token')
       const res = await axios.post('/api/ai/write', {
-        book_id: bookId, content, command, selected_text: selectedText,
+        book_id: bookId, content, command, chapter_id: chapterId, selected_text: selectedText,
         model: selectedModel.value || undefined,
       }, {
         headers: { Authorization: `Bearer ${token}` },
@@ -215,9 +223,34 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  async function polishDiff(bookId: string, content: string, selectedText?: string, chapterId?: string) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const token = localStorage.getItem('token')
+      const res = await axios.post('/api/ai/polish-diff', {
+        book_id: bookId,
+        content,
+        chapter_id: chapterId,
+        selected_text: selectedText,
+        model: selectedModel.value || undefined,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const result = (res.data.data || res.data) as PolishDiffResult
+      lastResponse.value = result
+      return result
+    } catch (err: any) {
+      error.value = err.response?.data?.detail || err.message || 'AI Diff 润色失败'
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   return {
     isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages, selectedModel,
     setSelectedText, openPanel, closePanel, togglePanel, addMessage, clearChat,
-    sendMessage, streamChat, write, streamWrite,
+    sendMessage, streamChat, write, streamWrite, polishDiff,
   }
 })

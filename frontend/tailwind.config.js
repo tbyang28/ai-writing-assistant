@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{vue,js,ts,jsx,tsx}",
@@ -20,16 +21,16 @@ export default {
         },
         'ai-primary': '#6366f1',
         'surface': {
-          DEFAULT: '#ffffff',
-          secondary: '#f8fafc',
-          hover: '#f1f5f9',
+          DEFAULT: 'var(--surface)',
+          secondary: 'var(--surface-secondary)',
+          hover: 'var(--surface-hover)',
         },
         'text': {
-          primary: '#0f172a',
-          secondary: '#475569',
-          muted: '#94a3b8',
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
         },
-        'border': '#e2e8f0',
+        'border': 'var(--border-clr)',
         'danger': '#ef4444',
         'success': '#22c55e',
       },

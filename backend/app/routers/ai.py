@@ -10,8 +10,8 @@ from sqlalchemy import select
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import User, Book, Chapter
-from app.schemas.ai import AiChatRequest, AiWriteRequest, AiGenerateOutlineRequest, AiResponse
-from app.services.ai_service import call_siliconflow, build_messages
+from app.schemas.ai import AiChatRequest, AiWriteRequest, AiGenerateOutlineRequest, AiPolishDiffRequest, AiResponse
+from app.services.ai_service import call_siliconflow, build_messages, build_text_diff, summarize_diff
 from app.services.rag_service import build_rag_context, index_chapter
 
 
@@ -26,6 +26,46 @@ def _extract_ai_error(e: Exception) -> str:
         except Exception:
             pass
     return f"AI 服务调用失败: {str(e)}"
+
+
+async def _get_previous_chapters(chapter_id: str, db: AsyncSession, limit: int = 2) -> list[Chapter]:
+    """获取当前章节前面的历史章节（按 order 排序）"""
+    # 先查当前章节的 order
+    result = await db.execute(select(Chapter).where(Chapter.id == chapter_id))
+    current = result.scalar_one_or_none()
+    if not current:
+        return []
+
+    # 查同一本书中 order 更小的章节（最新几条）
+    result = await db.execute(
+        select(Chapter)
+        .where(Chapter.book_id == current.book_id, Chapter.order < current.order)
+        .order_by(Chapter.order.desc())
+        .limit(limit)
+    )
+    prev = list(result.scalars().all())
+    prev.reverse()  # 按时间正序
+    return prev
+
+
+def _build_continue_prompt(content: str, rag_context: str, prev_chapters: list[Chapter]) -> str:
+    """构建续写 prompt，带上历史章节作为上下文"""
+    parts = []
+
+    if prev_chapters:
+        history_parts = []
+        for ch in prev_chapters:
+            # 取每章末尾 1500 字作为上下文（开头可能意义不大）
+            tail = ch.content[-1500:] if len(ch.content) > 1500 else ch.content
+            history_parts.append(f"【{ch.title}】\n{tail}")
+        parts.append("【前情提要——以下是小说的历史章节内容】\n" + "\n\n".join(history_parts))
+
+    if rag_context:
+        parts.append(rag_context)
+
+    parts.append("【当前章节内容，请基于前情续写】\n" + content[:3000])
+
+    return "\n\n".join(parts)
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -113,12 +153,13 @@ async def ai_write(
         content = data.selected_text or data.content
 
         if command == "continue":
+            # 取历史章节上下文
+            prev_chapters = []
+            if data.chapter_id:
+                prev_chapters = await _get_previous_chapters(data.chapter_id, db)
             # RAG: 搜索全书中与当前内容相关的段落作为背景
             rag_context = await build_rag_context(db, content[:1000], data.book_id)
-            user_msg = f"以下是小说的当前内容，请续写：\n\n{content[:3000]}"
-            if rag_context:
-                # 把搜索到的相关背景塞进 prompt，AI 会知道之前发生过什么
-                user_msg = f"{rag_context}\n\n以下是小说的当前内容，请续写：\n\n{content[:3000]}"
+            user_msg = _build_continue_prompt(content, rag_context, prev_chapters)
         elif command == "improve":
             user_msg = f"请润色以下文本：\n\n{content[:3000]}"
         elif command == "fix":
@@ -151,11 +192,13 @@ async def ai_write_stream(
             content = data.selected_text or data.content
 
             if command == "continue":
+                # 取历史章节上下文
+                prev_chapters = []
+                if data.chapter_id:
+                    prev_chapters = await _get_previous_chapters(data.chapter_id, db)
                 # RAG: 搜索全书中与当前内容相关的段落作为背景
                 rag_context = await build_rag_context(db, content[:1000], data.book_id)
-                user_msg = f"以下是小说的当前内容，请续写：\n\n{content[:3000]}"
-                if rag_context:
-                    user_msg = f"{rag_context}\n\n以下是小说的当前内容，请续写：\n\n{content[:3000]}"
+                user_msg = _build_continue_prompt(content, rag_context, prev_chapters)
             elif command == "improve":
                 user_msg = f"请润色以下文本：\n\n{content[:3000]}"
             elif command == "fix":
@@ -185,6 +228,39 @@ async def ai_write_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/polish-diff")
+async def ai_polish_diff(
+    data: AiPolishDiffRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI 润色并返回可审阅的 diff 对比。"""
+    await verify_book_access(data.book_id, current_user.id, db)
+
+    original = (data.selected_text or data.content or "").strip()
+    if not original:
+        raise HTTPException(status_code=400, detail="需要提供待润色文本")
+
+    try:
+        user_msg = f"请润色以下小说片段，只输出润色后的正文：\n\n{original[:3000]}"
+        messages = build_messages("polish_diff", user_msg)
+        result = await call_siliconflow(messages, stream=False, model=data.model)
+        revised = (result.get("answer") or "").strip()
+        segments = build_text_diff(original, revised)
+
+        return {
+            "data": {
+                "original": original,
+                "revised": revised,
+                "segments": segments,
+                "summary": summarize_diff(segments),
+            }
+        }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=_extract_ai_error(e))
 
 
 @router.post("/outline")
