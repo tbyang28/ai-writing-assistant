@@ -17,6 +17,7 @@ async def get_client() -> httpx.AsyncClient:
         _client = httpx.AsyncClient(
             timeout=httpx.Timeout(180.0, connect=15.0),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            proxies={},  # 禁用代理，避免代理导致的连接问题
         )
     return _client
 
