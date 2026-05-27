@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useBookStore, type Chapter, type Outline, type Character } from '@/stores/book'
 import { useAiStore } from '@/stores/ai'
 import AiPanel from '@/components/AiPanel.vue'
+import CharacterGraph from '@/components/CharacterGraph.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,7 @@ const saveTimer = ref<any>(null)
 const saving = ref(false)
 const showOutline = ref(false)
 const showCharacters = ref(false)
+const workspaceMode = ref<'editor' | 'graph'>('editor')
 
 // Undo for AI insert
 const undoSnapshot = ref('')
@@ -39,6 +41,12 @@ const newOutlineTitle = ref('')
 const showNewCharacterModal = ref(false)
 const newCharacterName = ref('')
 const newCharacterRole = ref('')
+const showNewRelationModal = ref(false)
+const newRelationSource = ref('')
+const newRelationTarget = ref('')
+const newRelationType = ref<'ally' | 'rival' | 'mentor' | 'complex'>('ally')
+const newRelationStrength = ref(2)
+const newRelationDescription = ref('')
 const showNewInspirationModal = ref(false)
 const newInspirationTitle = ref('')
 const newInspirationContent = ref('')
@@ -59,6 +67,7 @@ onMounted(async () => {
 const chapters = computed(() => bookStore.currentBook?.chapters || [])
 const outlines = computed(() => bookStore.currentBook?.outlines || [])
 const characters = computed(() => bookStore.currentBook?.characters || [])
+const characterRelations = computed(() => bookStore.currentBook?.character_relations || [])
 const inspirations = computed(() => bookStore.currentBook?.inspirations || [])
 
 async function loadChapter(id: string) {
@@ -121,6 +130,26 @@ async function createCharacter() {
   newCharacterName.value = ''
   newCharacterRole.value = ''
   showNewCharacterModal.value = false
+}
+
+async function createRelation() {
+  if (!newRelationSource.value || !newRelationTarget.value || newRelationSource.value === newRelationTarget.value) return
+  await bookStore.createCharacterRelation(bookId.value, {
+    source_character_id: newRelationSource.value,
+    target_character_id: newRelationTarget.value,
+    relation_type: newRelationType.value,
+    description: newRelationDescription.value || undefined,
+    strength: newRelationStrength.value,
+  })
+  newRelationSource.value = ''
+  newRelationTarget.value = ''
+  newRelationType.value = 'ally'
+  newRelationStrength.value = 2
+  newRelationDescription.value = ''
+  showNewRelationModal.value = false
+  workspaceMode.value = 'graph'
+  showCharacters.value = true
+  showOutline.value = false
 }
 
 async function createInspiration() {
@@ -314,6 +343,17 @@ function stopDrag() {
           <button @click="showNewCharacterModal = true" class="w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
             + 新建角色
           </button>
+          <button @click="showNewRelationModal = true"
+            :disabled="characters.length < 2"
+            class="mt-1 w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+            + 新建关系
+          </button>
+          <button @click="workspaceMode = 'graph'"
+            class="mt-1 w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg border transition-colors"
+            :class="workspaceMode === 'graph' ? 'text-cyan-600 border-cyan-300 bg-cyan-50 dark:text-cyan-300 dark:border-cyan-800 dark:bg-cyan-950/40' : 'text-gray-500 border-transparent hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800'">
+            <span>打开关系图</span>
+            <span>{{ characters.length }}人</span>
+          </button>
         </div>
         <div v-for="ch in characters" :key="ch.id" class="px-3 py-2 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
           <div class="flex items-center gap-2">
@@ -356,9 +396,22 @@ function stopDrag() {
     <div class="flex-1 flex flex-col min-w-0" :style="{ backgroundColor: 'var(--surface)' }">
       <!-- Title bar -->
       <div class="h-12 flex items-center px-4 gap-2 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
-        <input v-model="editorTitle" class="flex-1 text-base font-medium border-none outline-none bg-transparent" :style="{ color: 'var(--text-primary)' }" placeholder="章节标题" />
+        <input v-if="workspaceMode === 'editor'" v-model="editorTitle" class="flex-1 text-base font-medium border-none outline-none bg-transparent" :style="{ color: 'var(--text-primary)' }" placeholder="章节标题" />
+        <div v-else class="flex-1 text-base font-medium" :style="{ color: 'var(--text-primary)' }">
+          角色关系图
+        </div>
         <div class="flex items-center gap-2">
-          <span class="text-xs" :style="{ color: 'var(--text-muted)' }">{{ editorContent.length }} 字</span>
+          <button @click="workspaceMode = 'editor'"
+            class="text-xs px-2 py-1 rounded-lg"
+            :class="workspaceMode === 'editor' ? 'bg-brand text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'">
+            编辑器
+          </button>
+          <button @click="workspaceMode = 'graph'; showCharacters = true; showOutline = false"
+            class="text-xs px-2 py-1 rounded-lg"
+            :class="workspaceMode === 'graph' ? 'bg-brand text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'">
+            关系图
+          </button>
+          <span v-if="workspaceMode === 'editor'" class="text-xs" :style="{ color: 'var(--text-muted)' }">{{ editorContent.length }} 字</span>
           <button @click="aiStore.openPanel()" class="btn-secondary text-xs px-2 py-1">
             AI 助手
           </button>
@@ -367,7 +420,13 @@ function stopDrag() {
 
       <!-- Content -->
       <div class="flex-1 overflow-auto">
-        <div v-if="activeChapterId" class="max-w-3xl mx-auto p-6">
+        <CharacterGraph
+          v-if="workspaceMode === 'graph'"
+          :characters="characters"
+          :relations="characterRelations"
+          :book-title="bookStore.currentBook?.title"
+        />
+        <div v-else-if="activeChapterId" class="max-w-3xl mx-auto p-6">
           <textarea
             ref="textareaRef"
             v-model="editorContent"
@@ -452,6 +511,43 @@ function stopDrag() {
         <div class="flex justify-end gap-3 mt-4">
           <button @click="showNewCharacterModal = false" class="btn-secondary">取消</button>
           <button @click="createCharacter" :disabled="!newCharacterName.trim()" class="btn-primary">创建</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showNewRelationModal" class="modal-overlay" @click.self="showNewRelationModal = false">
+      <div class="modal-content">
+        <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建人物关系</h3>
+        <div class="space-y-3">
+          <select v-model="newRelationSource" class="form-input">
+            <option value="">选择起点角色</option>
+            <option v-for="character in characters" :key="character.id" :value="character.id">
+              {{ character.name }}
+            </option>
+          </select>
+          <select v-model="newRelationTarget" class="form-input">
+            <option value="">选择目标角色</option>
+            <option v-for="character in characters" :key="character.id" :value="character.id" :disabled="character.id === newRelationSource">
+              {{ character.name }}
+            </option>
+          </select>
+          <select v-model="newRelationType" class="form-input">
+            <option value="ally">同盟</option>
+            <option value="rival">敌对</option>
+            <option value="mentor">引导 / 师徒</option>
+            <option value="complex">复杂 / 暧昧</option>
+          </select>
+          <label class="form-label">
+            关系强度：{{ newRelationStrength }}
+          </label>
+          <input v-model.number="newRelationStrength" type="range" min="1" max="5" class="w-full accent-cyan-500" />
+          <textarea v-model="newRelationDescription" rows="3" class="form-textarea" placeholder="关系说明，例如：共同调查宗门旧案，彼此信任但隐藏秘密。" />
+        </div>
+        <div class="flex justify-end gap-3 mt-4">
+          <button @click="showNewRelationModal = false" class="btn-secondary">取消</button>
+          <button @click="createRelation" :disabled="!newRelationSource || !newRelationTarget || newRelationSource === newRelationTarget" class="btn-primary">
+            创建关系
+          </button>
         </div>
       </div>
     </div>

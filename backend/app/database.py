@@ -21,5 +21,5 @@ async def get_db():
 
 async def init_db():
     async with engine.begin() as conn:
-        from app.models import User, Book, Chapter, Outline, Character, Inspiration  # noqa
+        from app.models import User, Book, Chapter, Outline, Character, CharacterRelation, Inspiration  # noqa
         await conn.run_sync(Base.metadata.create_all)

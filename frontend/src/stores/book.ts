@@ -29,6 +29,18 @@ export interface Character {
   bio?: string
 }
 
+export interface CharacterRelation {
+  id: string
+  source_character_id: string
+  target_character_id: string
+  relation_type: 'ally' | 'rival' | 'mentor' | 'complex'
+  description?: string
+  strength: number
+  book_id: string
+  created_at?: string
+  updated_at?: string
+}
+
 export interface Inspiration {
   id: string
   title: string
@@ -50,6 +62,7 @@ export interface Book {
   chapters?: Chapter[]
   outlines?: Outline[]
   characters?: Character[]
+  character_relations?: CharacterRelation[]
   inspirations?: Inspiration[]
 }
 
@@ -181,6 +194,23 @@ export const useBookStore = defineStore('book', () => {
     return res.data || res
   }
 
+  async function createCharacterRelation(bookId: string, data: {
+    source_character_id: string
+    target_character_id: string
+    relation_type: CharacterRelation['relation_type']
+    description?: string
+    strength?: number
+  }) {
+    const res: any = await apiPost(`/books/${bookId}/character-relations`, data)
+    if (currentBook.value?.id === bookId) await fetchBook(bookId)
+    return res.data || res
+  }
+
+  async function deleteCharacterRelation(bookId: string, relationId: string) {
+    await apiDelete(`/books/${bookId}/character-relations/${relationId}`)
+    if (currentBook.value?.id === bookId) await fetchBook(bookId)
+  }
+
   async function createInspiration(bookId: string, data: { title: string; content: string; tags?: string[] }) {
     const res: any = await apiPost(`/books/${bookId}/inspirations`, data)
     if (currentBook.value?.id === bookId) await fetchBook(bookId)
@@ -192,6 +222,6 @@ export const useBookStore = defineStore('book', () => {
     fetchBooks, fetchBook, createBook, updateBook, deleteBook,
     fetchStats, fetchWritingStats,
     createChapter, fetchChapter, saveChapter, deleteChapter, publishChapter,
-    createOutline, createCharacter, createInspiration,
+    createOutline, createCharacter, createCharacterRelation, deleteCharacterRelation, createInspiration,
   }
 })

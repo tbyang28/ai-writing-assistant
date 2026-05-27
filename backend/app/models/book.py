@@ -30,6 +30,7 @@ class Book(Base):
     outlines = relationship("Outline", back_populates="book", cascade="all, delete-orphan",
                             order_by="Outline.order")
     characters = relationship("Character", back_populates="book", cascade="all, delete-orphan")
+    character_relations = relationship("CharacterRelation", back_populates="book", cascade="all, delete-orphan")
     inspirations = relationship("Inspiration", back_populates="book", cascade="all, delete-orphan")
 
 
@@ -76,6 +77,22 @@ class Character(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     book = relationship("Book", back_populates="characters")
+
+
+class CharacterRelation(Base):
+    __tablename__ = "character_relations"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    source_character_id = Column(String, ForeignKey("characters.id"), nullable=False)
+    target_character_id = Column(String, ForeignKey("characters.id"), nullable=False)
+    relation_type = Column(String, default="ally")  # ally | rival | mentor | complex
+    description = Column(Text, default="")
+    strength = Column(Integer, default=2)
+    book_id = Column(String, ForeignKey("books.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    book = relationship("Book", back_populates="character_relations")
 
 
 class Inspiration(Base):

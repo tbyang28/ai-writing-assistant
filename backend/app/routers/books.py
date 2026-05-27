@@ -8,13 +8,14 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User, Book, Chapter, Outline, Character, Inspiration
+from app.models import User, Book, Chapter, Outline, Character, CharacterRelation, Inspiration
 from app.services.rag_service import index_chapter
 from app.schemas.book import (
     BookCreate, BookUpdate, BookListResponse, BookResponse, BookStats,
     ChapterCreate, ChapterUpdate, ChapterSave, ChapterResponse,
     OutlineCreate, OutlineResponse,
     CharacterCreate, CharacterResponse,
+    CharacterRelationCreate, CharacterRelationResponse,
     InspirationCreate, InspirationResponse,
     WritingStatsResponse,
 )
@@ -151,6 +152,7 @@ async def get_book(
             selectinload(Book.chapters),
             selectinload(Book.outlines),
             selectinload(Book.characters),
+            selectinload(Book.character_relations),
             selectinload(Book.inspirations),
         )
         .where(Book.id == book_id, Book.owner_id == current_user.id)
@@ -167,6 +169,7 @@ async def get_book(
         chapters=[ChapterResponse.model_validate(c) for c in (book.chapters or [])],
         outlines=[OutlineResponse.model_validate(o) for o in (book.outlines or [])],
         characters=[CharacterResponse.model_validate(c) for c in (book.characters or [])],
+        character_relations=[CharacterRelationResponse.model_validate(r) for r in (book.character_relations or [])],
         inspirations=[InspirationResponse.model_validate(i) for i in (book.inspirations or [])],
     )
 
@@ -464,6 +467,81 @@ async def create_character(
     await db.commit()
     await db.refresh(character)
     return CharacterResponse.model_validate(character)
+
+
+@router.get("/books/{book_id}/character-relations", response_model=list[CharacterRelationResponse])
+async def list_character_relations(
+    book_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CharacterRelation).join(Book).where(
+            CharacterRelation.book_id == book_id,
+            Book.owner_id == current_user.id,
+        ).order_by(CharacterRelation.created_at.desc())
+    )
+    return [CharacterRelationResponse.model_validate(r) for r in result.scalars().all()]
+
+
+@router.post("/books/{book_id}/character-relations", response_model=CharacterRelationResponse, status_code=status.HTTP_201_CREATED)
+async def create_character_relation(
+    book_id: str,
+    data: CharacterRelationCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if data.source_character_id == data.target_character_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能创建角色自身关系")
+
+    book_result = await db.execute(select(Book).where(Book.id == book_id, Book.owner_id == current_user.id))
+    book = book_result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="作品不存在")
+
+    character_result = await db.execute(
+        select(Character).where(
+            Character.book_id == book_id,
+            Character.id.in_([data.source_character_id, data.target_character_id]),
+        )
+    )
+    if len(character_result.scalars().all()) != 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="关系中的角色不存在")
+
+    relation = CharacterRelation(
+        source_character_id=data.source_character_id,
+        target_character_id=data.target_character_id,
+        relation_type=data.relation_type,
+        description=data.description or "",
+        strength=max(1, min(data.strength, 5)),
+        book_id=book_id,
+    )
+    db.add(relation)
+    await db.commit()
+    await db.refresh(relation)
+    return CharacterRelationResponse.model_validate(relation)
+
+
+@router.delete("/books/{book_id}/character-relations/{relation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_character_relation(
+    book_id: str,
+    relation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CharacterRelation).join(Book).where(
+            CharacterRelation.id == relation_id,
+            CharacterRelation.book_id == book_id,
+            Book.owner_id == current_user.id,
+        )
+    )
+    relation = result.scalar_one_or_none()
+    if not relation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="关系不存在")
+
+    await db.delete(relation)
+    await db.commit()
 
 
 # ===================== Inspirations =====================

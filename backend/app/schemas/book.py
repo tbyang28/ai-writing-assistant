@@ -89,6 +89,29 @@ class CharacterResponse(BaseModel):
         from_attributes = True
 
 
+class CharacterRelationCreate(BaseModel):
+    source_character_id: str
+    target_character_id: str
+    relation_type: str = "ally"
+    description: Optional[str] = None
+    strength: int = 2
+
+
+class CharacterRelationResponse(BaseModel):
+    id: str
+    source_character_id: str
+    target_character_id: str
+    relation_type: str = "ally"
+    description: Optional[str] = None
+    strength: int = 2
+    book_id: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class InspirationCreate(BaseModel):
     title: str
     content: str
@@ -126,6 +149,7 @@ class BookResponse(BookListResponse):
     chapters: Optional[List[ChapterResponse]] = None
     outlines: Optional[List[OutlineResponse]] = None
     characters: Optional[List[CharacterResponse]] = None
+    character_relations: Optional[List[CharacterRelationResponse]] = None
     inspirations: Optional[List[InspirationResponse]] = None
 
 
