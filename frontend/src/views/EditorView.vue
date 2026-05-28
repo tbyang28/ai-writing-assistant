@@ -54,6 +54,7 @@ const newInspirationTitle = ref('')
 const newInspirationContent = ref('')
 const selectionStart = ref(0)
 const selectionEnd = ref(0)
+const contentAreaRef = ref<HTMLDivElement | null>(null)
 
 onMounted(async () => {
   if (bookId.value) {
@@ -161,7 +162,7 @@ async function saveExtractedCharacters() {
   extractedCharacters.value = []
   showCharacters.value = true
   showOutline.value = false
-  workspaceMode.value = 'graph'
+  switchWorkspaceMode('graph')
 }
 
 async function createRelation() {
@@ -179,9 +180,9 @@ async function createRelation() {
   newRelationStrength.value = 2
   newRelationDescription.value = ''
   showNewRelationModal.value = false
-  workspaceMode.value = 'graph'
   showCharacters.value = true
   showOutline.value = false
+  switchWorkspaceMode('graph')
 }
 
 async function createInspiration() {
@@ -266,6 +267,25 @@ function updateEditorSelection() {
 
 watch(editorContent, () => {
   nextTick(autoResizeTextarea)
+})
+
+function switchWorkspaceMode(mode: 'editor' | 'graph') {
+  workspaceMode.value = mode
+  if (mode === 'graph') {
+    showCharacters.value = true
+    showOutline.value = false
+  }
+
+  nextTick(() => {
+    if (contentAreaRef.value) contentAreaRef.value.scrollTop = 0
+    if (mode === 'editor') autoResizeTextarea()
+  })
+}
+
+watch(workspaceMode, (mode) => {
+  if (mode === 'editor') {
+    nextTick(autoResizeTextarea)
+  }
 })
 
 // === Resizable panel drag ===
@@ -396,7 +416,7 @@ function stopDrag() {
             class="mt-1 w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
             + 新建关系
           </button>
-          <button @click="workspaceMode = 'graph'"
+          <button @click="switchWorkspaceMode('graph')"
             class="mt-1 w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg border transition-colors"
             :class="workspaceMode === 'graph' ? 'text-cyan-600 border-cyan-300 bg-cyan-50 dark:text-cyan-300 dark:border-cyan-800 dark:bg-cyan-950/40' : 'text-gray-500 border-transparent hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800'">
             <span>打开关系图</span>
@@ -449,12 +469,12 @@ function stopDrag() {
           角色关系图
         </div>
         <div class="flex items-center gap-2">
-          <button @click="workspaceMode = 'editor'"
+          <button @click="switchWorkspaceMode('editor')"
             class="text-xs px-2 py-1 rounded-lg"
             :class="workspaceMode === 'editor' ? 'bg-brand text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'">
             编辑器
           </button>
-          <button @click="workspaceMode = 'graph'; showCharacters = true; showOutline = false"
+          <button @click="switchWorkspaceMode('graph')"
             class="text-xs px-2 py-1 rounded-lg"
             :class="workspaceMode === 'graph' ? 'bg-brand text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'">
             关系图
@@ -467,7 +487,7 @@ function stopDrag() {
       </div>
 
       <!-- Content -->
-      <div class="flex-1 overflow-auto">
+      <div ref="contentAreaRef" class="flex-1 overflow-auto">
         <CharacterGraph
           v-if="workspaceMode === 'graph'"
           :characters="characters"
