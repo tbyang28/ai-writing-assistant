@@ -136,6 +136,30 @@ class TestBooks:
         resp = await async_client.post("/api/books", json={"title": "test"})
         assert resp.status_code == 403
 
+    async def test_seed_demo_book(self, async_client, user_token: str):
+        """一键初始化示例作品，包含章节、大纲、人物和关系"""
+        resp = await async_client.post(
+            "/api/demo/seed",
+            headers=_auth_header(user_token),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["title"] == "雨巷边缘"
+        assert data["status"] == "SERIAL"
+        assert data["word_count"] > 0
+        assert len(data["chapters"]) == 3
+        assert len(data["outlines"]) == 1
+        assert len(data["characters"]) == 6
+        assert len(data["character_relations"]) == 7
+        assert len(data["inspirations"]) == 2
+
+        second_resp = await async_client.post(
+            "/api/demo/seed",
+            headers=_auth_header(user_token),
+        )
+        assert second_resp.status_code == 200
+        assert second_resp.json()["id"] == data["id"]
+
 
 class TestChapters:
     async def test_create_chapter(self, async_client, user_token: str, created_book: dict):

@@ -112,6 +112,14 @@ export const useBookStore = defineStore('book', () => {
     return book
   }
 
+  async function seedDemoBook() {
+    const res: any = await apiPost('/demo/seed')
+    const book = res.data || res
+    currentBook.value = book
+    await Promise.all([fetchBooks(), fetchStats(), fetchWritingStats()])
+    return book
+  }
+
   async function updateBook(id: string, data: { title?: string; description?: string; cover?: string; status?: string }) {
     const res: any = await apiPut(`/books/${id}`, data)
     const updated = res.data || res
@@ -219,7 +227,7 @@ export const useBookStore = defineStore('book', () => {
 
   return {
     books, currentBook, isLoading, stats, writingStats, currentChapter,
-    fetchBooks, fetchBook, createBook, updateBook, deleteBook,
+    fetchBooks, fetchBook, createBook, seedDemoBook, updateBook, deleteBook,
     fetchStats, fetchWritingStats,
     createChapter, fetchChapter, saveChapter, deleteChapter, publishChapter,
     createOutline, createCharacter, createCharacterRelation, deleteCharacterRelation, createInspiration,

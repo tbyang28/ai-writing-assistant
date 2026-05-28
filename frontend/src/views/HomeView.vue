@@ -14,6 +14,8 @@ const newBookTitle = ref('')
 const newBookDescription = ref('')
 const isCreating = ref(false)
 const createError = ref('')
+const isSeedingDemo = ref(false)
+const seedError = ref('')
 
 const totalChapters = computed(() => bookStore.stats?.totalChapters || 0)
 const totalWords = computed(() => bookStore.stats?.totalWords || 0)
@@ -80,6 +82,19 @@ async function createNewBook() {
     createError.value = err?.response?.data?.detail || err?.message || '创建失败'
   } finally {
     isCreating.value = false
+  }
+}
+
+async function seedDemoBook() {
+  seedError.value = ''
+  isSeedingDemo.value = true
+  try {
+    const book = await bookStore.seedDemoBook()
+    router.push(`/editor/${book.id}`)
+  } catch (err: any) {
+    seedError.value = err?.response?.data?.detail || err?.message || '初始化失败'
+  } finally {
+    isSeedingDemo.value = false
   }
 }
 
@@ -151,7 +166,17 @@ function formatDateLabel(dateText: string) {
                       </svg>
                       新建作品
                     </button>
+                    <button
+                      @click="seedDemoBook"
+                      :disabled="isSeedingDemo"
+                      class="inline-flex items-center gap-2 rounded-lg bg-cyan-500/15 px-4 py-2 text-sm font-medium text-cyan-100 ring-1 ring-cyan-300/25 hover:bg-cyan-500/25 transition-colors disabled:opacity-60"
+                    >
+                      {{ isSeedingDemo ? '初始化中...' : '初始化示例作品' }}
+                    </button>
                   </div>
+                </div>
+                <div v-if="seedError" class="mt-4 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                  {{ seedError }}
                 </div>
 
                 <div class="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -252,7 +277,13 @@ function formatDateLabel(dateText: string) {
                 <div v-else class="mt-4 rounded-xl border border-dashed p-8 text-center" :style="{ borderColor: 'var(--border-clr)' }">
                   <h3 class="font-medium" :style="{ color: 'var(--text-primary)' }">还没有作品</h3>
                   <p class="mt-2 text-sm" :style="{ color: 'var(--text-muted)' }">创建第一部作品，开始管理章节、角色和创作进度。</p>
-                  <button @click="showNewBookModal = true" class="btn-primary mt-4">创建作品</button>
+                  <div class="mt-4 flex flex-wrap justify-center gap-2">
+                    <button @click="seedDemoBook" :disabled="isSeedingDemo" class="btn-primary disabled:opacity-60">
+                      {{ isSeedingDemo ? '初始化中...' : '初始化示例作品' }}
+                    </button>
+                    <button @click="showNewBookModal = true" class="btn-secondary">创建空白作品</button>
+                  </div>
+                  <p v-if="seedError" class="mt-3 text-sm text-red-500">{{ seedError }}</p>
                 </div>
               </div>
             </div>
