@@ -92,6 +92,27 @@ SYSTEM_PROMPTS = {
 3. 分章大纲（每章的核心情节）
 
 请以清晰的格式输出。""",
+
+    "extract_characters": """你是小说人物信息抽取引擎。请从用户提供的小说正文中识别明确出现的人物。
+
+要求：
+1. 只抽取人物，不要抽取地点、组织、功法、物品、章节标题
+2. 如果出现称号和真名，优先使用真名；没有真名时才使用稳定称号
+3. 根据上下文推断人物身份，例如：主角、反派、师父、同伴、配角、未知
+4. 为每个人物生成一句简短简介，说明他/她在片段中的作用
+5. 只输出 JSON，不要 Markdown，不要解释
+
+JSON 格式：
+{
+  "characters": [
+    {
+      "name": "人物名",
+      "role": "主角/反派/师父/同伴/配角/未知",
+      "bio": "一句话简介",
+      "confidence": 0.86
+    }
+  ]
+}""",
 }
 
 
@@ -151,6 +172,39 @@ def summarize_diff(segments: list[dict[str, str]], limit: int = 6) -> list[str]:
         i += 1
 
     return summaries
+
+
+def parse_character_extraction(raw_text: str) -> list[dict]:
+    """Parse and normalize LLM character extraction JSON."""
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        text = text[start:end + 1]
+
+    data = json.loads(text)
+    characters = data.get("characters", [])
+    normalized = []
+    seen = set()
+
+    for item in characters:
+        name = str(item.get("name", "")).strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        normalized.append({
+            "name": name[:30],
+            "role": str(item.get("role") or "未知").strip()[:30],
+            "bio": str(item.get("bio") or "").strip()[:160],
+            "confidence": float(item.get("confidence") or 0.7),
+        })
+
+    return normalized[:12]
 
 
 async def call_siliconflow(

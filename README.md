@@ -1,202 +1,333 @@
-# AI 写作助手
+# AI Copilot 写作平台
 
-一个基于 FastAPI + Vue3 的智能网文写作平台，集成 DeepSeek-V3.2 大语言模型，提供 AI 续写、润色、校对、大纲生成等功能，并支持 **RAG 检索增强**（语义搜索全书内容）。
+面向长篇网文创作的 AI 全栈写作辅助系统。项目基于 **FastAPI + Vue3 + TypeScript**，集成大模型写作、RAG 检索增强、AI Diff 润色、自动人物识别和角色关系图谱，目标是把传统“AI 聊天框”升级成一个可演示、可落地的小说创作工作台。
 
-## ✨ 功能特性
-
-### 🎯 核心功能
-- ✅ 用户认证与授权（JWT）
-- ✅ 书籍管理（创建、编辑、删除）
-- ✅ 章节管理（创建、保存、发布）
-- ✅ 角色管理（角色档案与关系）
-- ✅ 灵感收集与管理
-- ✅ 大纲管理
-
-### 🤖 AI 功能
-- ✅ AI 智能对话
-- ✅ AI 续写功能（流式输出）
-- ✅ AI 润色优化
-- ✅ AI 校对修正
-- ✅ 内容摘要生成
-- ✅ 大纲自动生成
-- ✅ **RAG 检索增强**（语义搜索全书，保持内容一致性）
-
-### 🚀 便捷工具
-- ✅ 一键启动脚本（`./start.sh`）
-- ✅ 一键停止脚本（`./stop.sh`）
-- ✅ 自动日志记录
-
-## 🛠️ 技术栈
-
-### 后端
-| 技术 | 版本 | 说明 |
-|------|------|------|
-| FastAPI | 0.115 | 高性能异步 Web 框架 |
-| SQLAlchemy | 2.0 | ORM 数据库操作 |
-| JWT (python-jose) | - | 用户认证 |
-| httpx | - | 异步 HTTP 客户端 |
-| SQLite | - | 轻量级数据库 |
-
-### 前端
-| 技术 | 版本 | 说明 |
-|------|------|------|
-| Vue | 3.5 | 渐进式 JavaScript 框架 |
-| TypeScript | 5.6 | 类型安全 |
-| Pinia | 2.2 | 状态管理 |
-| Vue Router | 4.4 | 路由管理 |
-| Tailwind CSS | 3.4 | 原子化 CSS 框架 |
-| Vite | 5.4 | 构建工具 |
-| Axios | 1.7 | HTTP 客户端 |
-
-### AI 服务
-| 服务 | 说明 |
-|------|------|
-| DeepSeek-V3.2 | 大语言模型 |
-| SiliconFlow API | 模型调用平台 |
-| BAAI/bge-large-zh-v1.5 | 向量嵌入模型（用于 RAG） |
-
-## 🚀 快速开始
-
-### 前置要求
-- Python 3.9+
-- Node.js 18+
-- 硅基流动 API Key（获取地址：https://cloud.siliconflow.cn）
-
-### 🏃 一键启动（推荐）
-
-```bash
-# 进入项目目录
-cd ai-writing-assistant
-
-# 一键启动（首次使用前请先安装依赖）
-./start.sh
-```
-
-### 📦 手动安装依赖
-
-**后端依赖：**
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-.\venv\Scripts\activate   # Windows
-pip install -r requirements.txt
-```
-
-**前端依赖：**
-```bash
-cd frontend
-npm install
-```
-
-### ⚙️ 配置环境变量
-
-编辑 `backend/.env` 文件：
-```env
-SILICONFLOW_API_KEY=你的API密钥
-DEEPSEEK_MODEL=deepseek-ai/DeepSeek-V3.2
-```
-
-### 📝 手动启动
-
-**后端：**
-```bash
-cd backend
-source venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**前端：**
-```bash
-cd frontend
-npm run dev
-```
-
-### 🛑 停止服务
-
-```bash
-./stop.sh
-```
-
-## 🌐 访问地址
-
-| 服务 | 地址 |
-|------|------|
-| 前端页面 | http://localhost:5173 |
-| 后端 API | http://localhost:8000 |
-| API 文档 | http://localhost:8000/docs |
-
-## 📁 项目结构
-
-```
-ai-writing-assistant/
-├── backend/
-│   ├── app/
-│   │   ├── models/          # 数据模型（含 RAG 向量存储）
-│   │   ├── routers/         # API 路由
-│   │   ├── schemas/         # Pydantic 模式
-│   │   ├── services/        # 业务逻辑（含 RAG 服务）
-│   │   ├── config.py        # 配置
-│   │   ├── database.py      # 数据库连接
-│   │   ├── dependencies.py  # 依赖注入
-│   │   └── main.py          # 主应用
-│   ├── requirements.txt     # Python 依赖
-│   └── .env                 # 环境变量
-├── frontend/
-│   ├── src/
-│   │   ├── components/      # Vue 组件
-│   │   ├── views/           # 页面视图
-│   │   ├── stores/          # Pinia 状态管理
-│   │   ├── api/             # API 调用
-│   │   └── assets/          # 静态资源
-│   ├── package.json         # Node 依赖
-│   └── vite.config.ts       # Vite 配置
-├── logs/                    # 日志目录（自动创建）
-├── start.sh                 # 一键启动脚本
-├── stop.sh                  # 一键停止脚本
-└── README.md                # 项目说明
-```
-
-## 🧠 RAG 检索增强
-
-本项目集成了 RAG（Retrieval-Augmented Generation）功能：
-
-**工作原理：**
-1. 章节保存时自动将内容切块并向量化
-2. AI 续写时自动搜索全书语义相近的段落
-3. 将相关内容作为上下文提供给 AI，确保生成内容与全书设定一致
-
-**优势：**
-- 支持语义搜索（近义词匹配）
-- 避免前后内容矛盾
-- 自动关联已有情节
-
-## 📚 学习路径
-
-这个项目可以作为学习以下技术的实战案例：
-
-1. **FastAPI 异步编程** - 高性能后端开发
-2. **JWT 用户认证机制** - 安全的身份验证
-3. **Vue3 Composition API** - 现代前端开发
-4. **Pinia 状态管理** - 响应式状态管理
-5. **大模型 API 集成** - AI 应用开发
-6. **流式输出（SSE）** - 实时数据推送
-7. **RAG 检索增强** - 提升 AI 生成质量
-
-## 📊 功能对比
-
-| 功能 | 描述 |
-|------|------|
-| AI 续写 | 根据已有内容自然延续故事情节 |
-| AI 润色 | 优化表达，使语言更生动 |
-| AI 校对 | 修正错别字、语法错误 |
-| AI 大纲 | 生成详细的小说大纲 |
-| RAG 搜索 | 语义搜索全书相关内容 |
-
-## 📝 许可证
-
-MIT License
+> 项目定位：暑期 AI 全栈开发实习作品集项目，重点展示 AI 应用落地、前后端工程能力、产品交互设计和技术表达能力。
 
 ---
 
-**项目地址：** https://github.com/tbyang28/ai-writing-assistant
+## 核心亮点
+
+| 能力 | 说明 |
+|------|------|
+| AI 写作助手 | 支持续写、润色、校对、摘要、大纲生成和自由对话 |
+| 流式输出 | 使用 SSE 实现 AI 内容逐字生成，提升交互体验 |
+| RAG 检索增强 | 保存章节时自动切块索引，续写时检索全书相关上下文 |
+| AI Diff 润色 | AI 生成润色文本，后端计算差异，前端展示红绿对比并支持接受修改 |
+| AI 人物识别 | 从章节正文中自动抽取人物候选，用户确认后保存到角色库 |
+| 角色关系图谱 | 支持人物关系管理，并用沉浸式 SVG 网络图展示阵营、冲突和关系强度 |
+| Dashboard 首页 | 作品统计、写作趋势、AI 能力卡片和演示路径集中展示 |
+| 用户认证 | JWT 登录注册、bcrypt 密码加密、用户数据隔离 |
+
+---
+
+## 演示路径
+
+面试演示建议按下面流程走，能完整体现“AI + 全栈 + 产品闭环”：
+
+1. 打开 Dashboard，展示项目定位、统计卡片、AI 能力卡和关系图谱预览。
+2. 进入任意作品的写作工作台，展示章节编辑器和右侧 AI 助手。
+3. 在当前章节点击 `AI 识别人物`，展示人物候选卡片、角色类型和置信度。
+4. 保存识别到的人物，进入 `关系图` 展示人物网络。
+5. 手动新建一条人物关系，展示图谱如何更新。
+6. 回到编辑器，使用 `Diff 润色` 展示红绿对比和接受修改流程。
+7. 最后讲后端架构：FastAPI、SQLAlchemy、RAG、SSE、SiliconFlow、多模型配置和测试。
+
+---
+
+## 页面与功能
+
+### Dashboard 控制台
+
+- 产品级首页，而不是简单作品列表
+- 展示作品数、累计字数、章节数、连续创作天数
+- 展示本周写作趋势
+- 展示 AI 能力模块：续写、Diff 润色、人物识别、关系图谱
+- 提供推荐演示路径，方便面试快速讲清楚项目
+
+### 写作工作台
+
+- 左侧：章节、大纲、角色管理
+- 中间：章节正文编辑器 / 角色关系图切换
+- 右侧：AI 助手面板
+- 支持自动保存、AI 内容插入、AI 替换撤销
+
+### AI Diff 润色
+
+传统 AI 润色容易直接覆盖原文，本项目采用更可控的工程方案：
+
+1. AI 只负责生成润色后的文本
+2. 后端使用 `difflib.SequenceMatcher` 计算原文和润色结果的差异
+3. 前端展示删除/新增的红绿 Diff
+4. 用户确认后再写回编辑器
+
+这种设计避免大模型直接控制正文，降低误改风险。
+
+### AI 人物识别
+
+用户无需手动录入全部人物。系统可以从当前章节正文中抽取人物候选：
+
+- 人物姓名
+- 人物身份，例如主角、反派、师父、同伴、配角
+- 一句话简介
+- 识别置信度
+
+前端先展示候选卡片，由用户勾选确认后再保存到角色库，避免误识别造成脏数据。
+
+### 角色关系图谱
+
+角色关系图谱用于展示长篇小说的人物网络：
+
+- 支持真实人物关系入库
+- 关系类型：同盟、敌对、引导/师徒、复杂/暧昧
+- 关系强度：1-5
+- 沉浸式 SVG 网络图
+- 点击节点查看人物卡片
+- 关系图优先使用真实关系，没有关系时自动生成展示关系作为兜底
+
+---
+
+## 技术架构
+
+```mermaid
+flowchart LR
+  User["用户 / 作者"] --> Frontend["Vue3 + TypeScript + Pinia"]
+  Frontend --> API["FastAPI REST API"]
+  Frontend --> SSE["SSE 流式输出"]
+  API --> Auth["JWT Auth"]
+  API --> DB["SQLite + SQLAlchemy"]
+  API --> AI["SiliconFlow LLM API"]
+  API --> RAG["RAG Service"]
+  RAG --> Embedding["bge-large-zh-v1.5"]
+  RAG --> Chunks["章节切块 / 向量检索"]
+  DB --> Books["作品 / 章节 / 角色 / 关系"]
+```
+
+---
+
+## 技术栈
+
+### 前端
+
+| 技术 | 说明 |
+|------|------|
+| Vue3 | 前端框架 |
+| TypeScript | 类型安全 |
+| Pinia | 状态管理 |
+| Vue Router | 页面路由 |
+| Tailwind CSS | UI 样式 |
+| Vite | 构建工具 |
+| Axios / Fetch | HTTP 与 SSE 请求 |
+
+### 后端
+
+| 技术 | 说明 |
+|------|------|
+| FastAPI | 异步 Web 框架 |
+| SQLAlchemy 2.0 | ORM 数据建模 |
+| SQLite | 本地轻量数据库 |
+| Pydantic | 请求/响应模型校验 |
+| python-jose | JWT 认证 |
+| bcrypt | 密码哈希 |
+| httpx | 异步调用大模型接口 |
+| pytest | 单元测试 |
+
+### AI 能力
+
+| 能力 | 实现 |
+|------|------|
+| 大模型调用 | SiliconFlow Chat Completions |
+| 默认模型 | DeepSeek-V3.2 |
+| 多模型切换 | DeepSeek / GLM / MiniMax |
+| RAG Embedding | BAAI/bge-large-zh-v1.5 |
+| 流式生成 | Server-Sent Events |
+| 结构化抽取 | Prompt + JSON 解析 + 用户确认 |
+
+---
+
+## API 概览
+
+### 认证
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/register` | 用户注册 |
+| POST | `/api/auth/login` | 用户登录 |
+| GET | `/api/auth/me` | 当前用户 |
+
+### 作品与写作
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/books` | 获取作品列表 |
+| POST | `/api/books` | 创建作品 |
+| GET | `/api/books/{book_id}` | 作品详情 |
+| POST | `/api/books/{book_id}/chapters` | 创建章节 |
+| PUT | `/api/chapters/save` | 保存章节并触发 RAG 索引 |
+| POST | `/api/books/{book_id}/characters` | 创建角色 |
+| POST | `/api/books/{book_id}/character-relations` | 创建人物关系 |
+
+### AI
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/ai/chat` | AI 对话 |
+| POST | `/api/ai/chat/stream` | AI 流式对话 |
+| POST | `/api/ai/write` | AI 写作辅助 |
+| POST | `/api/ai/write/stream` | AI 流式写作 |
+| POST | `/api/ai/polish-diff` | AI Diff 润色 |
+| POST | `/api/ai/extract-characters` | AI 识别章节人物 |
+| POST | `/api/ai/outline` | 生成大纲 |
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Python 3.9+
+- Node.js 18+
+- SiliconFlow API Key
+
+### 1. 克隆项目
+
+```bash
+git clone https://github.com/tbyang28/ai-writing-assistant.git
+cd ai-writing-assistant
+```
+
+### 2. 配置环境变量
+
+后端创建 `.env`：
+
+```env
+SECRET_KEY=your-secret-key
+SILICONFLOW_API_KEY=your-api-key
+DEEPSEEK_MODEL=deepseek-ai/DeepSeek-V3.2
+DATABASE_URL=sqlite+aiosqlite:///./writing_platform.db
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+```
+
+### 3. 启动后端
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 4. 启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 5. 访问地址
+
+| 服务 | 地址 |
+|------|------|
+| 前端 | http://localhost:5173 |
+| 后端 | http://localhost:8000 |
+| API 文档 | http://localhost:8000/docs |
+
+---
+
+## Docker 启动
+
+```bash
+cp .env.docker.example .env
+docker-compose up --build
+```
+
+访问：
+
+- 前端：http://localhost
+- 后端：http://localhost:8000
+- API 文档：http://localhost:8000/docs
+
+---
+
+## 测试
+
+```bash
+cd backend
+source venv/bin/activate
+pytest tests/ -v
+```
+
+已覆盖模块：
+
+- 认证服务
+- JWT 与密码哈希
+- AI Prompt 构建
+- AI Diff 解析
+- 人物识别 JSON 解析
+- RAG 文本切块与相似度
+- 作品/章节/角色 API
+
+---
+
+## 项目结构
+
+```text
+ai-writing-assistant/
+├── backend/
+│   ├── app/
+│   │   ├── models/          # SQLAlchemy 模型
+│   │   ├── routers/         # FastAPI 路由
+│   │   ├── schemas/         # Pydantic Schema
+│   │   ├── services/        # AI / RAG / Auth 服务
+│   │   ├── database.py
+│   │   └── main.py
+│   ├── tests/
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # AI 面板、关系图等组件
+│   │   ├── views/           # Dashboard / Editor / Auth
+│   │   ├── stores/          # Pinia 状态
+│   │   ├── api/
+│   │   └── assets/
+│   ├── package.json
+│   └── vite.config.ts
+├── docker-compose.yml
+├── start.sh
+├── stop.sh
+└── README.md
+```
+
+---
+
+## 面试讲解重点
+
+这个项目不是简单套一个聊天接口，而是围绕“长篇小说创作”的真实工作流做 AI 产品化：
+
+- **产品设计**：从 Dashboard 到编辑器，再到人物关系图，有完整演示路径。
+- **AI 工程**：AI 续写、结构化人物抽取、Diff 润色和 RAG 检索分别解决不同写作场景。
+- **可控性**：AI 结果不直接污染正文或数据库，关键步骤都让用户确认。
+- **全栈能力**：FastAPI 后端、Vue3 前端、JWT 认证、数据库建模、SSE 流式输出、Docker 部署。
+- **工程质量**：有单元测试、错误处理、多模型配置和可扩展的数据模型。
+
+---
+
+## 后续规划
+
+- AI 自动推荐人物关系
+- 角色关系变化时间线
+- 全文一致性检查
+- 伏笔分析和回收提醒
+- TipTap 富文本编辑器
+- 示例作品一键初始化
+- README 实际截图补充
+
+---
+
+## 项目信息
+
+- GitHub: https://github.com/tbyang28/ai-writing-assistant
+- 作者: Tianbo Yang
+- 用途: AI 全栈开发实习项目展示

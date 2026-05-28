@@ -20,6 +20,13 @@ export const useAiStore = defineStore('ai', () => {
     summary: string[]
   }
 
+  type ExtractedCharacter = {
+    name: string
+    role: string
+    bio: string
+    confidence: number
+  }
+
   function setSelectedText(text: string) {
     selectedText.value = text
   }
@@ -248,9 +255,33 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  async function extractCharacters(bookId: string, content: string, chapterId?: string) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const token = localStorage.getItem('token')
+      const res = await axios.post('/api/ai/extract-characters', {
+        book_id: bookId,
+        content,
+        chapter_id: chapterId,
+        model: selectedModel.value || undefined,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const result = res.data.data || res.data
+      lastResponse.value = result
+      return (result.characters || []) as ExtractedCharacter[]
+    } catch (err: any) {
+      error.value = err.response?.data?.detail || err.message || 'AI 识别人物失败'
+      return []
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   return {
     isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages, selectedModel,
     setSelectedText, openPanel, closePanel, togglePanel, addMessage, clearChat,
-    sendMessage, streamChat, write, streamWrite, polishDiff,
+    sendMessage, streamChat, write, streamWrite, polishDiff, extractCharacters,
   }
 })

@@ -41,6 +41,8 @@ const newOutlineTitle = ref('')
 const showNewCharacterModal = ref(false)
 const newCharacterName = ref('')
 const newCharacterRole = ref('')
+const showExtractCharactersModal = ref(false)
+const extractedCharacters = ref<Array<{ name: string; role: string; bio: string; confidence: number; selected: boolean }>>([])
 const showNewRelationModal = ref(false)
 const newRelationSource = ref('')
 const newRelationTarget = ref('')
@@ -130,6 +132,36 @@ async function createCharacter() {
   newCharacterName.value = ''
   newCharacterRole.value = ''
   showNewCharacterModal.value = false
+}
+
+async function extractCharactersFromChapter() {
+  if (!editorContent.value.trim() || aiStore.isLoading) return
+  const existingNames = new Set(characters.value.map((character) => character.name))
+  const suggestions = await aiStore.extractCharacters(
+    bookId.value,
+    editorContent.value,
+    activeChapterId.value || undefined,
+  )
+  extractedCharacters.value = suggestions
+    .filter((item) => item.name && !existingNames.has(item.name))
+    .map((item) => ({ ...item, selected: true }))
+  showExtractCharactersModal.value = true
+}
+
+async function saveExtractedCharacters() {
+  const selected = extractedCharacters.value.filter((item) => item.selected)
+  for (const item of selected) {
+    await bookStore.createCharacter(bookId.value, {
+      name: item.name,
+      role: item.role,
+      bio: item.bio,
+    })
+  }
+  showExtractCharactersModal.value = false
+  extractedCharacters.value = []
+  showCharacters.value = true
+  showOutline.value = false
+  workspaceMode.value = 'graph'
 }
 
 async function createRelation() {
@@ -310,11 +342,21 @@ function stopDrag() {
         </div>
         <div v-for="ch in chapters" :key="ch.id"
           @click="selectChapter(ch.id)"
-          class="px-3 py-2 cursor-pointer text-sm border-b hover:bg-gray-50 dark:hover:bg-gray-800"
-          :class="{ 'bg-brand-50 text-brand dark:bg-brand-900/30': activeChapterId === ch.id }"
+          class="px-3 py-2 cursor-pointer text-sm border-b border-l-4 transition-colors"
+          :class="activeChapterId === ch.id
+            ? 'border-l-brand bg-brand-50/80 dark:bg-brand-900/30 hover:bg-brand-50 dark:hover:bg-brand-900/40'
+            : 'border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-800'"
           :style="{ borderBottomColor: 'var(--border-clr)' }">
-          <div class="font-medium truncate" :style="{ color: 'var(--text-primary)' }">{{ ch.title }}</div>
-          <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ ch.word_count }}字</div>
+          <div class="font-medium truncate"
+            :class="activeChapterId === ch.id ? 'text-brand dark:text-white' : ''"
+            :style="activeChapterId === ch.id ? {} : { color: 'var(--text-primary)' }">
+            {{ ch.title }}
+          </div>
+          <div class="text-xs mt-0.5"
+            :class="activeChapterId === ch.id ? 'text-brand-600 dark:text-brand-300' : ''"
+            :style="activeChapterId === ch.id ? {} : { color: 'var(--text-muted)' }">
+            {{ ch.word_count }}字
+          </div>
         </div>
         <div v-if="chapters.length === 0" class="text-center py-8 text-sm" :style="{ color: 'var(--text-muted)' }">
           暂无章节
@@ -342,6 +384,12 @@ function stopDrag() {
         <div class="p-2">
           <button @click="showNewCharacterModal = true" class="w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
             + 新建角色
+          </button>
+          <button @click="extractCharactersFromChapter"
+            :disabled="!editorContent.trim() || aiStore.isLoading"
+            class="mt-1 w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50">
+            <span>{{ aiStore.isLoading ? '识别中...' : 'AI 识别人物' }}</span>
+            <span>当前章</span>
           </button>
           <button @click="showNewRelationModal = true"
             :disabled="characters.length < 2"
@@ -511,6 +559,56 @@ function stopDrag() {
         <div class="flex justify-end gap-3 mt-4">
           <button @click="showNewCharacterModal = false" class="btn-secondary">取消</button>
           <button @click="createCharacter" :disabled="!newCharacterName.trim()" class="btn-primary">创建</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showExtractCharactersModal" class="modal-overlay" @click.self="showExtractCharactersModal = false">
+      <div class="modal-content max-w-2xl">
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 class="text-lg font-semibold" :style="{ color: 'var(--text-primary)' }">AI 识别到的人物</h3>
+            <p class="text-sm mt-1" :style="{ color: 'var(--text-muted)' }">确认后保存到角色库，避免误识别的内容可以取消勾选。</p>
+          </div>
+          <span class="text-xs px-2 py-1 rounded-full bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+            {{ extractedCharacters.filter((item) => item.selected).length }} 个待保存
+          </span>
+        </div>
+
+        <div v-if="extractedCharacters.length" class="space-y-2 max-h-96 overflow-y-auto">
+          <label
+            v-for="character in extractedCharacters"
+            :key="character.name"
+            class="flex gap-3 rounded-lg border p-3 cursor-pointer"
+            :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"
+          >
+            <input v-model="character.selected" type="checkbox" class="mt-1 accent-violet-600" />
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-3">
+                <div class="font-medium" :style="{ color: 'var(--text-primary)' }">{{ character.name }}</div>
+                <div class="text-xs" :style="{ color: 'var(--text-muted)' }">
+                  置信度 {{ Math.round(character.confidence * 100) }}%
+                </div>
+              </div>
+              <div class="text-xs mt-1 text-violet-600 dark:text-violet-300">{{ character.role || '未知' }}</div>
+              <p class="text-sm mt-2 leading-6" :style="{ color: 'var(--text-secondary)' }">{{ character.bio }}</p>
+            </div>
+          </label>
+        </div>
+
+        <div v-else class="rounded-lg border p-6 text-center" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-muted)' }">
+          没有识别到新的角色。可能是章节内容太短，或人物已经存在于角色库。
+        </div>
+
+        <div v-if="aiStore.error" class="mt-3 text-sm text-red-500">
+          {{ aiStore.error }}
+        </div>
+
+        <div class="flex justify-end gap-3 mt-4">
+          <button @click="showExtractCharactersModal = false" class="btn-secondary">取消</button>
+          <button @click="saveExtractedCharacters" :disabled="!extractedCharacters.some((item) => item.selected)" class="btn-primary">
+            保存选中人物
+          </button>
         </div>
       </div>
     </div>

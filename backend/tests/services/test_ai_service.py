@@ -6,7 +6,10 @@
 """
 import pytest
 
-from app.services.ai_service import build_messages, build_text_diff, summarize_diff, SYSTEM_PROMPTS
+from app.services.ai_service import (
+    build_messages, build_text_diff, summarize_diff,
+    parse_character_extraction, SYSTEM_PROMPTS,
+)
 
 
 class TestBuildMessages:
@@ -104,7 +107,10 @@ class TestBuildMessages:
 
     def test_system_prompts_have_all_required_keys(self):
         """所有必要的 system prompt key 都存在"""
-        required_keys = {"chat", "continue", "improve", "polish_diff", "fix", "summarize", "outline"}
+        required_keys = {
+            "chat", "continue", "improve", "polish_diff", "fix",
+            "summarize", "outline", "extract_characters",
+        }
         assert required_keys.issubset(SYSTEM_PROMPTS.keys())
 
     def test_all_system_prompts_are_strings(self):
@@ -129,3 +135,23 @@ class TestTextDiff:
         ]
         summaries = summarize_diff(segments)
         assert summaries[0] == "将「慢慢的」改为「缓缓」"
+
+
+class TestCharacterExtraction:
+    def test_parse_character_extraction_json(self):
+        raw = """
+        {
+          "characters": [
+            {"name": "萧寒", "role": "主角", "bio": "被宗门追捕的少年。", "confidence": 0.91},
+            {"name": "林月", "role": "同伴", "bio": "在危急时救下萧寒。", "confidence": 0.84}
+          ]
+        }
+        """
+        characters = parse_character_extraction(raw)
+        assert characters[0]["name"] == "萧寒"
+        assert characters[1]["role"] == "同伴"
+
+    def test_parse_character_extraction_deduplicates_names(self):
+        raw = '{"characters":[{"name":"萧寒","role":"主角"},{"name":"萧寒","role":"少年"}]}'
+        characters = parse_character_extraction(raw)
+        assert len(characters) == 1

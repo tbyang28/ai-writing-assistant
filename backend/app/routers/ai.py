@@ -10,8 +10,14 @@ from sqlalchemy import select
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import User, Book, Chapter
-from app.schemas.ai import AiChatRequest, AiWriteRequest, AiGenerateOutlineRequest, AiPolishDiffRequest, AiResponse
-from app.services.ai_service import call_siliconflow, build_messages, build_text_diff, summarize_diff
+from app.schemas.ai import (
+    AiChatRequest, AiWriteRequest, AiGenerateOutlineRequest,
+    AiPolishDiffRequest, AiExtractCharactersRequest, AiResponse,
+)
+from app.services.ai_service import (
+    call_siliconflow, build_messages, build_text_diff,
+    summarize_diff, parse_character_extraction,
+)
 from app.services.rag_service import build_rag_context, index_chapter
 
 
@@ -258,6 +264,33 @@ async def ai_polish_diff(
                 "summary": summarize_diff(segments),
             }
         }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=_extract_ai_error(e))
+
+
+@router.post("/extract-characters")
+async def ai_extract_characters(
+    data: AiExtractCharactersRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """从小说正文中识别人物候选，不直接写入角色库。"""
+    await verify_book_access(data.book_id, current_user.id, db)
+
+    content = (data.content or "").strip()
+    if len(content) < 20:
+        raise HTTPException(status_code=400, detail="正文内容太短，无法识别人物")
+
+    try:
+        user_msg = f"请从以下小说正文中识别人物：\n\n{content[:6000]}"
+        messages = build_messages("extract_characters", user_msg)
+        result = await call_siliconflow(messages, stream=False, model=data.model)
+        raw_answer = result.get("answer") or "{}"
+        characters = parse_character_extraction(raw_answer)
+        return {"data": {"characters": characters}}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="AI 返回格式无法解析，请重试")
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=_extract_ai_error(e))
