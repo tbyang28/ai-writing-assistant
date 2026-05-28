@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import axios from 'axios'
 
 export const useAiStore = defineStore('ai', () => {
+  const HISTORY_PREFIX = 'ai-writing-assistant:chat-history'
+  const HISTORY_LIMIT = 20
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const lastResponse = ref<any>(null)
@@ -10,6 +12,7 @@ export const useAiStore = defineStore('ai', () => {
   const selectedText = ref('')
   const pendingInsert = ref<string | null>(null)
   const chatMessages = ref<Array<{ role: string; content: string }>>([])
+  const activeHistoryKey = ref<string | null>(null)
   // 当前选中的模型 ID（SiliconFlow model ID）
   const selectedModel = ref<string | null>(null)
 
@@ -37,10 +40,60 @@ export const useAiStore = defineStore('ai', () => {
 
   function addMessage(role: string, content: string) {
     chatMessages.value.push({ role, content })
+    persistChatHistory()
   }
 
   function clearChat() {
     chatMessages.value = []
+    if (activeHistoryKey.value) {
+      localStorage.removeItem(activeHistoryKey.value)
+    }
+  }
+
+  function buildHistoryKey(bookId: string, chapterId?: string) {
+    return `${HISTORY_PREFIX}:${bookId}:${chapterId || 'book'}`
+  }
+
+  function loadChatHistory(bookId: string, chapterId?: string) {
+    const key = buildHistoryKey(bookId, chapterId)
+    activeHistoryKey.value = key
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) {
+        chatMessages.value = []
+        return
+      }
+      const parsed = JSON.parse(raw)
+      chatMessages.value = Array.isArray(parsed)
+        ? parsed.filter((msg) => msg?.role && typeof msg.content === 'string').slice(-HISTORY_LIMIT)
+        : []
+    } catch {
+      chatMessages.value = []
+    }
+  }
+
+  function persistChatHistory() {
+    if (!activeHistoryKey.value) return
+    const messages = chatMessages.value
+      .filter((msg) => msg.content.trim())
+      .slice(-HISTORY_LIMIT)
+    localStorage.setItem(activeHistoryKey.value, JSON.stringify(messages))
+  }
+
+  function replaceLastAssistantContent(content: string) {
+    const last = chatMessages.value[chatMessages.value.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content = content
+      persistChatHistory()
+    }
+  }
+
+  function appendToLastAssistant(text: string) {
+    const last = chatMessages.value[chatMessages.value.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content += text
+      persistChatHistory()
+    }
   }
 
   async function sendMessage(bookId: string, message: string, currentContent?: string, chapterId?: string) {
@@ -129,8 +182,8 @@ export const useAiStore = defineStore('ai', () => {
         }
       }
 
-      addMessage('assistant', fullText)
       lastResponse.value = { answer: fullText }
+      persistChatHistory()
       return { answer: fullText }
     } catch (err: any) {
       error.value = err.message || '流式响应失败'
@@ -197,6 +250,7 @@ export const useAiStore = defineStore('ai', () => {
       }
 
       lastResponse.value = { answer: fullText }
+      persistChatHistory()
       return { answer: fullText }
     } catch (err: any) {
       error.value = err.message || '流式响应失败'
@@ -282,6 +336,7 @@ export const useAiStore = defineStore('ai', () => {
   return {
     isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages, selectedModel,
     setSelectedText, openPanel, closePanel, togglePanel, addMessage, clearChat,
+    loadChatHistory, persistChatHistory, replaceLastAssistantContent, appendToLastAssistant,
     sendMessage, streamChat, write, streamWrite, polishDiff, extractCharacters,
   }
 })

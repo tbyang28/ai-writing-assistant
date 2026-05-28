@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
 
 // 可选模型列表（显示名 → SiliconFlow model ID）
@@ -27,6 +27,17 @@ const inputText = ref('')
 const isComposing = ref(false)
 const compositionPending = ref(false)
 const polishDiffResult = ref<Awaited<ReturnType<typeof aiStore.polishDiff>> | null>(null)
+
+onMounted(() => {
+  aiStore.loadChatHistory(props.bookId, props.chapterId)
+})
+
+watch(
+  () => [props.bookId, props.chapterId],
+  () => {
+    aiStore.loadChatHistory(props.bookId, props.chapterId)
+  },
+)
 
 async function sendMessage() {
   if (!inputText.value.trim() || aiStore.isLoading) return
@@ -65,12 +76,7 @@ async function runCommand(command: string) {
   aiStore.addMessage('assistant', '')
 
   await aiStore.streamWrite(props.bookId, props.chapterContent, command, (chunk) => {
-    // 每收到一个字就追加到最后一条助手消息末尾
-    const msgs = aiStore.chatMessages
-    const last = msgs[msgs.length - 1]
-    if (last && last.role === 'assistant') {
-      last.content += chunk
-    }
+    aiStore.appendToLastAssistant(chunk)
   }, undefined, props.chapterId)
 }
 
@@ -99,12 +105,7 @@ function handleStreamSend() {
   const msg = inputText.value
   inputText.value = ''
   aiStore.streamChat(props.bookId, msg, (chunk) => {
-    // append to last assistant message
-    const msgs = aiStore.chatMessages
-    const last = msgs[msgs.length - 1]
-    if (last && last.role === 'assistant') {
-      last.content += chunk
-    }
+    aiStore.appendToLastAssistant(chunk)
   }, props.chapterContent, props.chapterId)
 }
 </script>
