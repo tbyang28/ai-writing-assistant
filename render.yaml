@@ -2,10 +2,13 @@ services:
   - type: web
     name: ai-writing-assistant-api
     runtime: docker
-    rootDir: backend
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     plan: free
     healthCheckPath: /api/health
     envVars:
+      - key: PORT
+        value: "10000"
       - key: DATABASE_URL
         value: sqlite+aiosqlite:///./writing_platform.db
       - key: SECRET_KEY
