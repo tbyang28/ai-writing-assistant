@@ -33,6 +33,7 @@ app.add_middleware(
         "http://localhost",
         "http://127.0.0.1:5173",
         "https://*.vercel.app",
+        "https://ai-writing-assistant-web.onrender.com",
     ],
     allow_origin_regex=settings.cors_allow_origin_regex,
     allow_credentials=True,
