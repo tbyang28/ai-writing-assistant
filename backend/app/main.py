@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.database import init_db
 from app.routers import auth, books, ai
+from app.config import settings
 from app.services.ai_service import close_client
 
 
@@ -30,8 +31,10 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost",
+        "http://127.0.0.1:5173",
         "https://*.vercel.app",
     ],
+    allow_origin_regex=settings.cors_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

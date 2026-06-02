@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: ai-writing-assistant-api
+    runtime: docker
+    rootDir: backend
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - name: DATABASE_URL
+        value: sqlite+aiosqlite:///./writing_platform.db
+      - name: SECRET_KEY
+        generateValue: true
+      - name: ALGORITHM
+        value: HS256
+      - name: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - name: SILICONFLOW_API_KEY
+        sync: false
+      - name: SILICONFLOW_BASE_URL
+        value: https://api.siliconflow.cn/v1
+      - name: DEEPSEEK_MODEL
+        value: deepseek-ai/DeepSeek-V4-Flash
+      - name: CORS_ALLOW_ORIGIN_REGEX
+        value: 'https://.*\.(vercel\.app|onrender\.com)'
+
+  - type: web
+    name: ai-writing-assistant-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - name: VITE_API_URL
+        value: https://ai-writing-assistant-api.onrender.com/api

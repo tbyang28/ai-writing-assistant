@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-secret-key"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
+    cors_allow_origin_regex: str = r"https://.*\.(vercel\.app|onrender\.com)"
     siliconflow_api_key: str = ""
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
     deepseek_model: str = "deepseek-ai/DeepSeek-V3.2"
