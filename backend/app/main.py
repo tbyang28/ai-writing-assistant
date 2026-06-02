@@ -55,6 +55,21 @@ app.include_router(books.router)
 app.include_router(ai.router)
 
 
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "message": "AI Writing Platform Backend is running",
+        "docs": "/docs",
+        "health": "/api/health",
+    }
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "message": "AI Writing Platform Backend is running"}
+
+
+@app.get("/health")
+async def health_alias():
+    return await health()
