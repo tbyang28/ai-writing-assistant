@@ -4,6 +4,15 @@
 
 项目已支持一键初始化示例作品，便于本地体验和面试演示。
 
+## 在线体验
+
+| 服务 | 地址 |
+|------|------|
+| 前端体验 | https://ai-writing-assistant-web.onrender.com |
+| 后端健康检查 | https://ai-writing-assistant-api-o4nb.onrender.com/api/health |
+
+> Render 免费实例在长时间无人访问后会自动休眠，首次打开可能需要等待几十秒唤醒。
+
 ---
 
 ## 技术栈
@@ -194,6 +203,30 @@ docker-compose down
 
 ---
 
+## Render 在线部署
+
+项目已提供 `render.yaml`，可以通过 Render Blueprint 从 GitHub 一键创建两个线上服务：
+
+| 服务 | 类型 | 说明 |
+|------|------|------|
+| `ai-writing-assistant-api` | Web Service | FastAPI 后端，使用 Docker 部署 |
+| `ai-writing-assistant-web` | Static Site | Vue3 前端，构建后托管静态资源 |
+
+部署时需要配置：
+
+- 后端环境变量 `SILICONFLOW_API_KEY`
+- 前端环境变量 `VITE_API_URL`，值为后端地址加 `/api`
+
+示例：
+
+```env
+VITE_API_URL=https://ai-writing-assistant-api-o4nb.onrender.com/api
+```
+
+Render 负责构建、托管和提供公网访问地址，适合把项目快速部署成可在线体验的作品集 Demo。
+
+---
+
 ## 环境变量说明
 
 本地开发可在 `backend/.env` 配置，Docker 部署可复制 `.env.docker.example` 到根目录 `.env`。
@@ -257,5 +290,7 @@ pytest tests/ -v
 ## 项目信息
 
 - GitHub: https://github.com/tbyang28/ai-writing-assistant
+- 在线体验: https://ai-writing-assistant-web.onrender.com
+- 后端健康检查: https://ai-writing-assistant-api-o4nb.onrender.com/api/health
 - 作者: Tianbo Yang
 - 用途: AI 全栈开发实习项目展示
