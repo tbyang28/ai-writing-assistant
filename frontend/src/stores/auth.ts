@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { apiGet, apiPost } from '@/api'
+import { api, apiGet, apiPost } from '@/api'
 
 export interface AuthUser {
   id: string
@@ -9,9 +9,24 @@ export interface AuthUser {
   avatar: string
 }
 
+function readStoredUser(): AuthUser | null {
+  const raw = localStorage.getItem('user')
+  if (!raw || raw === 'undefined') {
+    localStorage.removeItem('user')
+    return null
+  }
+
+  try {
+    return JSON.parse(raw) as AuthUser
+  } catch {
+    localStorage.removeItem('user')
+    return null
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('token'))
-  const user = ref<AuthUser | null>(JSON.parse(localStorage.getItem('user') || 'null'))
+  const user = ref<AuthUser | null>(readStoredUser())
 
   const isLoggedIn = computed(() => Boolean(token.value))
 
@@ -27,6 +42,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    delete api.defaults.headers.common.Authorization
   }
 
   async function login(email: string, password: string) {
