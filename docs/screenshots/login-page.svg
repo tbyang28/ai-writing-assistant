@@ -1,59 +1,71 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f172a"/>
-      <stop offset="1" stop-color="#1e293b"/>
-    </linearGradient>
-    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+    <radialGradient id="cyan" cx="26%" cy="18%" r="42%">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violet" cx="72%" cy="74%" r="42%">
+      <stop offset="0" stop-color="#6366f1" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="button" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#6366f1"/>
-      <stop offset="1" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#06b6d4"/>
     </linearGradient>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#020617" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="24" stdDeviation="30" flood-color="#020617" flood-opacity="0.35"/>
     </filter>
   </defs>
-  <rect width="1600" height="900" fill="url(#bg)"/>
-  <g opacity="0.18" stroke="#94a3b8" stroke-width="1">
-    <path d="M0 120H1600M0 240H1600M0 360H1600M0 480H1600M0 600H1600M0 720H1600"/>
-    <path d="M160 0V900M320 0V900M480 0V900M640 0V900M800 0V900M960 0V900M1120 0V900M1280 0V900M1440 0V900"/>
-  </g>
-  <circle cx="1120" cy="220" r="280" fill="#22d3ee" opacity="0.12"/>
-  <circle cx="420" cy="660" r="260" fill="#6366f1" opacity="0.14"/>
-
-  <g transform="translate(180 170)">
-    <rect x="0" y="0" width="520" height="58" rx="29" fill="#111827" stroke="#334155"/>
-    <circle cx="34" cy="29" r="8" fill="#22d3ee"/>
-    <text x="58" y="37" fill="#e5e7eb" font-size="22" font-family="Arial, sans-serif" font-weight="700" letter-spacing="3">AI WRITING WORKSPACE</text>
-    <text x="0" y="175" fill="#f8fafc" font-size="68" font-family="Arial, sans-serif" font-weight="800">AI 写作助手</text>
-    <text x="0" y="240" fill="#cbd5e1" font-size="28" font-family="Arial, sans-serif">面向长篇小说创作的智能工作台</text>
-    <text x="0" y="292" fill="#94a3b8" font-size="22" font-family="Arial, sans-serif">作品管理、章节编辑、AI 续写、人物关系图谱与 RAG 上下文增强。</text>
-
-    <g transform="translate(0 390)">
-      <rect width="240" height="130" rx="18" fill="#1e293b" stroke="#334155"/>
-      <text x="26" y="48" fill="#38bdf8" font-size="20" font-family="Arial, sans-serif" font-weight="700">Stream</text>
-      <text x="26" y="86" fill="#e5e7eb" font-size="22" font-family="Arial, sans-serif" font-weight="700">流式续写</text>
-    </g>
-    <g transform="translate(270 390)">
-      <rect width="240" height="130" rx="18" fill="#1e293b" stroke="#334155"/>
-      <text x="26" y="48" fill="#34d399" font-size="20" font-family="Arial, sans-serif" font-weight="700">RAG</text>
-      <text x="26" y="86" fill="#e5e7eb" font-size="22" font-family="Arial, sans-serif" font-weight="700">语义检索</text>
-    </g>
+  <rect width="1600" height="900" fill="#0f172a"/>
+  <rect width="1600" height="900" fill="url(#cyan)"/>
+  <rect width="1600" height="900" fill="url(#violet)"/>
+  <g opacity="0.08" stroke="#ffffff" stroke-width="1">
+    <path d="M0 80H1600M0 160H1600M0 240H1600M0 320H1600M0 400H1600M0 480H1600M0 560H1600M0 640H1600M0 720H1600M0 800H1600"/>
+    <path d="M80 0V900M160 0V900M240 0V900M320 0V900M400 0V900M480 0V900M560 0V900M640 0V900M720 0V900M800 0V900M880 0V900M960 0V900M1040 0V900M1120 0V900M1200 0V900M1280 0V900M1360 0V900M1440 0V900M1520 0V900"/>
   </g>
 
-  <g transform="translate(980 190)" filter="url(#shadow)">
-    <rect width="420" height="520" rx="28" fill="#f8fafc"/>
-    <rect x="0" y="0" width="420" height="8" rx="4" fill="url(#brand)"/>
-    <text x="54" y="82" fill="#0f172a" font-size="32" font-family="Arial, sans-serif" font-weight="800">欢迎回来</text>
-    <text x="54" y="120" fill="#64748b" font-size="18" font-family="Arial, sans-serif">登录后继续管理你的作品</text>
-    <text x="54" y="190" fill="#475569" font-size="16" font-family="Arial, sans-serif" font-weight="700">邮箱</text>
-    <rect x="54" y="210" width="312" height="58" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
-    <text x="78" y="247" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">writer@example.com</text>
-    <text x="54" y="310" fill="#475569" font-size="16" font-family="Arial, sans-serif" font-weight="700">密码</text>
-    <rect x="54" y="330" width="312" height="58" rx="12" fill="#ffffff" stroke="#6366f1" stroke-width="2"/>
-    <text x="78" y="367" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">••••••••</text>
-    <rect x="54" y="420" width="312" height="62" rx="14" fill="#6366f1"/>
-    <text x="210" y="459" fill="#ffffff" font-size="20" font-family="Arial, sans-serif" font-weight="800" text-anchor="middle">登录</text>
-    <text x="154" y="512" fill="#64748b" font-size="16" font-family="Arial, sans-serif">还没有账号？</text>
-    <text x="252" y="512" fill="#4f46e5" font-size="16" font-family="Arial, sans-serif" font-weight="700">去注册</text>
+  <g transform="translate(120 86)">
+    <rect width="258" height="44" rx="22" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.16"/>
+    <circle cx="26" cy="22" r="6" fill="#67e8f9"/>
+    <text x="46" y="28" fill="#a5f3fc" font-size="15" font-family="Arial, sans-serif" font-weight="700" letter-spacing="3">WRITING WORKSPACE</text>
+    <text x="0" y="190" fill="#f8fafc" font-size="56" font-family="Arial, sans-serif" font-weight="800">把长篇创作整理成</text>
+    <text x="0" y="260" fill="#f8fafc" font-size="56" font-family="Arial, sans-serif" font-weight="800">可管理的工作台</text>
+    <text x="0" y="326" fill="#cbd5e1" font-size="22" font-family="Arial, sans-serif">管理作品、章节、人物和关系图，在需要时用 AI 续写、润色、校对与检索历史设定。</text>
+
+    <g transform="translate(0 470)">
+      <rect width="270" height="132" rx="18" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.12"/>
+      <text x="28" y="42" fill="#a5f3fc" font-size="16" font-family="Arial, sans-serif" font-weight="700">RAG Context</text>
+      <text x="28" y="76" fill="#ffffff" font-size="22" font-family="Arial, sans-serif" font-weight="800">召回历史设定</text>
+      <text x="28" y="108" fill="#cbd5e1" font-size="16" font-family="Arial, sans-serif">续写前检索相关章节。</text>
+    </g>
+    <g transform="translate(294 470)">
+      <rect width="270" height="132" rx="18" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.12"/>
+      <text x="28" y="42" fill="#c4b5fd" font-size="16" font-family="Arial, sans-serif" font-weight="700">Story Map</text>
+      <text x="28" y="76" fill="#ffffff" font-size="22" font-family="Arial, sans-serif" font-weight="800">人物关系图谱</text>
+      <text x="28" y="108" fill="#cbd5e1" font-size="16" font-family="Arial, sans-serif">沉淀阵营和剧情冲突。</text>
+    </g>
+  </g>
+
+  <g transform="translate(1000 174)" filter="url(#shadow)">
+    <rect width="410" height="548" rx="26" fill="#0f172a" fill-opacity="0.9" stroke="#334155"/>
+    <text x="34" y="58" fill="#67e8f9" font-size="14" font-family="Arial, sans-serif" letter-spacing="3" font-weight="700">AI WRITING ASSISTANT</text>
+    <text x="34" y="104" fill="#ffffff" font-size="30" font-family="Arial, sans-serif" font-weight="800">欢迎回来</text>
+    <text x="34" y="136" fill="#94a3b8" font-size="16" font-family="Arial, sans-serif">登录后继续你的写作工作台。</text>
+    <rect x="319" y="42" width="48" height="48" rx="14" fill="url(#button)"/>
+    <text x="343" y="72" fill="#ffffff" font-size="18" font-family="Arial, sans-serif" font-weight="800" text-anchor="middle">AI</text>
+
+    <rect x="34" y="174" width="342" height="46" rx="14" fill="#020617" stroke="#1e293b"/>
+    <rect x="38" y="178" width="166" height="38" rx="11" fill="#ffffff"/>
+    <text x="121" y="203" fill="#0f172a" font-size="15" font-family="Arial, sans-serif" font-weight="700" text-anchor="middle">登录</text>
+    <text x="292" y="203" fill="#94a3b8" font-size="15" font-family="Arial, sans-serif" font-weight="700" text-anchor="middle">注册</text>
+
+    <text x="34" y="268" fill="#cbd5e1" font-size="15" font-family="Arial, sans-serif" font-weight="700">邮箱</text>
+    <rect x="34" y="286" width="342" height="54" rx="14" fill="#020617" stroke="#334155"/>
+    <text x="56" y="320" fill="#64748b" font-size="16" font-family="Arial, sans-serif">writer@example.com</text>
+    <text x="34" y="388" fill="#cbd5e1" font-size="15" font-family="Arial, sans-serif" font-weight="700">密码</text>
+    <rect x="34" y="406" width="342" height="54" rx="14" fill="#020617" stroke="#334155"/>
+    <text x="56" y="440" fill="#64748b" font-size="16" font-family="Arial, sans-serif">••••••••••</text>
+    <rect x="34" y="492" width="342" height="54" rx="14" fill="url(#button)"/>
+    <text x="205" y="527" fill="#ffffff" font-size="17" font-family="Arial, sans-serif" font-weight="800" text-anchor="middle">登录工作台</text>
   </g>
 </svg>

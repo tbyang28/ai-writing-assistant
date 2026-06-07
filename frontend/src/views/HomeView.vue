@@ -113,6 +113,11 @@ async function deleteBook(book: Book, event: Event) {
   }
 }
 
+function logout() {
+  authStore.logout()
+  router.push('/auth')
+}
+
 function getStatusLabel(status: string) {
   return ({ DRAFT: '草稿', SERIAL: '连载中', FINISHED: '已完结' } as any)[status] || status
 }
@@ -141,6 +146,26 @@ function formatDateLabel(dateText: string) {
         </div>
 
         <template v-else>
+          <header class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-sm"
+            :style="{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-clr)' }">
+            <div class="flex min-w-0 items-center gap-3">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-sm font-semibold text-white">
+                {{ (user?.name || user?.email || 'U').slice(0, 1).toUpperCase() }}
+              </div>
+              <div class="min-w-0">
+                <div class="text-sm font-medium truncate" :style="{ color: 'var(--text-primary)' }">
+                  {{ user?.name || '当前用户' }}
+                </div>
+                <div class="text-xs truncate" :style="{ color: 'var(--text-muted)' }">
+                  {{ user?.email || '已登录' }}
+                </div>
+              </div>
+            </div>
+            <button @click="logout" class="btn-secondary px-3 py-2 text-xs">
+              退出登录
+            </button>
+          </header>
+
           <!-- Hero dashboard -->
           <section class="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
             <div class="relative overflow-hidden rounded-2xl bg-[#0f172a] text-white border border-white/10 shadow-sm">
