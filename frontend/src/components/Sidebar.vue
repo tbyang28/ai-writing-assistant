@@ -13,9 +13,9 @@ const navItems = computed(() => [
   { path: '/', label: '我的作品', icon: '📚', active: route.path === '/' },
 ])
 
-function handleLogout() {
+async function handleLogout() {
   authStore.logout()
-  router.push('/auth')
+  await router.replace('/auth')
 }
 </script>
 
@@ -54,14 +54,14 @@ function handleLogout() {
       </div>
 
       <!-- Dark mode toggle -->
-      <button @click="themeStore.toggle()"
+      <button type="button" @click="themeStore.toggle()"
         class="w-full flex items-center justify-center lg:justify-start gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
         :class="themeStore.isDark ? 'text-yellow-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'">
         <span class="text-base">{{ themeStore.isDark ? '☀️' : '🌙' }}</span>
         <span class="hidden lg:inline">{{ themeStore.isDark ? '浅色模式' : '深色模式' }}</span>
       </button>
 
-      <button @click="handleLogout"
+      <button type="button" @click="handleLogout"
         class="w-full flex items-center justify-center lg:justify-start gap-2 px-3 py-2 text-sm rounded-lg transition-colors"
         :class="'text-gray-500 hover:text-red-500 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20'">
         <span>🚪</span>

@@ -113,9 +113,9 @@ async function deleteBook(book: Book, event: Event) {
   }
 }
 
-function logout() {
+async function logout() {
   authStore.logout()
-  router.push('/auth')
+  await router.replace('/auth')
 }
 
 function getStatusLabel(status: string) {
@@ -161,7 +161,7 @@ function formatDateLabel(dateText: string) {
                 </div>
               </div>
             </div>
-            <button @click="logout" class="btn-secondary px-3 py-2 text-xs">
+            <button type="button" @click="logout" class="btn-secondary px-3 py-2 text-xs">
               退出登录
             </button>
           </header>
