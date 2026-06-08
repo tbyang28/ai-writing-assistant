@@ -38,4 +38,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: https://ai-writing-assistant-api.onrender.com/api
+        value: https://ai-writing-assistant-api-o4nb.onrender.com/api
