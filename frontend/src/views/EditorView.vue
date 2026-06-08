@@ -390,12 +390,12 @@ function stopDrag() {
           @click="selectChapter(ch.id)"
           class="group flex items-start gap-2 px-3 py-2 cursor-pointer text-sm border-b border-l-4 transition-colors"
           :class="activeChapterId === ch.id
-            ? 'border-l-brand bg-brand-50/80 dark:bg-brand-900/30 hover:bg-brand-50 dark:hover:bg-brand-900/40'
+            ? 'border-l-brand bg-brand-600/15 hover:bg-brand-600/20 dark:bg-brand-900/35 dark:hover:bg-brand-900/45'
             : 'border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-800'"
           :style="{ borderBottomColor: 'var(--border-clr)' }">
           <div class="min-w-0 flex-1">
             <div class="font-medium truncate"
-              :class="activeChapterId === ch.id ? 'text-brand dark:text-white' : ''"
+              :class="activeChapterId === ch.id ? 'text-brand-700 dark:text-white' : ''"
               :style="activeChapterId === ch.id ? {} : { color: 'var(--text-primary)' }">
               {{ ch.title }}
             </div>
