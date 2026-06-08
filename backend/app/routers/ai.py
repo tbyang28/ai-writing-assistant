@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import traceback
 
@@ -9,7 +11,7 @@ from sqlalchemy import select
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User, Book, Chapter
+from app.models import User, Book, Chapter, Character, Outline
 from app.schemas.ai import (
     AiChatRequest, AiWriteRequest, AiGenerateOutlineRequest,
     AiPolishDiffRequest, AiExtractCharactersRequest, AiResponse,
@@ -18,7 +20,7 @@ from app.services.ai_service import (
     call_siliconflow, build_messages, build_text_diff,
     summarize_diff, parse_character_extraction,
 )
-from app.services.rag_service import build_rag_context, index_chapter
+from app.services.rag_service import build_rag_context
 
 
 def _extract_ai_error(e: Exception) -> str:
@@ -41,44 +43,126 @@ def _extract_ai_error(e: Exception) -> str:
     return f"AI 服务调用失败: {str(e)}"
 
 
-async def _get_previous_chapters(chapter_id: str, db: AsyncSession, limit: int = 2) -> list[Chapter]:
-    """获取当前章节前面的历史章节（按 order 排序）"""
-    # 先查当前章节的 order
+async def _get_current_chapter(chapter_id: str | None, db: AsyncSession) -> Chapter | None:
+    if not chapter_id:
+        return None
     result = await db.execute(select(Chapter).where(Chapter.id == chapter_id))
-    current = result.scalar_one_or_none()
-    if not current:
-        return []
+    return result.scalar_one_or_none()
 
-    # 查同一本书中 order 更小的章节（最新几条）
+
+async def _get_recent_book_chapters(
+    book_id: str,
+    db: AsyncSession,
+    current_chapter: Chapter | None = None,
+    limit: int = 3,
+) -> list[Chapter]:
+    query = select(Chapter).where(Chapter.book_id == book_id)
+    if current_chapter:
+        query = query.where(Chapter.order < current_chapter.order)
+
     result = await db.execute(
-        select(Chapter)
-        .where(Chapter.book_id == current.book_id, Chapter.order < current.order)
+        query
         .order_by(Chapter.order.desc())
         .limit(limit)
     )
-    prev = list(result.scalars().all())
-    prev.reverse()  # 按时间正序
-    return prev
+    chapters = list(result.scalars().all())
+    chapters.reverse()
+    return chapters
 
 
-def _build_continue_prompt(content: str, rag_context: str, prev_chapters: list[Chapter]) -> str:
-    """构建续写 prompt，带上历史章节作为上下文"""
-    parts = []
+async def _build_story_memory(
+    db: AsyncSession,
+    book: Book,
+    query: str,
+    chapter_id: str | None = None,
+    current_content: str | None = None,
+) -> str:
+    """Build a compact same-book memory block for AI calls."""
+    current_chapter = await _get_current_chapter(chapter_id, db)
+    previous_chapters = await _get_recent_book_chapters(book.id, db, current_chapter)
 
-    if prev_chapters:
+    character_result = await db.execute(
+        select(Character)
+        .where(Character.book_id == book.id)
+        .order_by(Character.created_at.asc())
+        .limit(12)
+    )
+    characters = list(character_result.scalars().all())
+
+    outline_result = await db.execute(
+        select(Outline)
+        .where(Outline.book_id == book.id)
+        .order_by(Outline.order.asc())
+        .limit(8)
+    )
+    outlines = list(outline_result.scalars().all())
+
+    rag_context = ""
+    if query.strip():
+        try:
+            rag_context = await build_rag_context(db, query[:1000], book.id)
+        except Exception:
+            rag_context = ""
+
+    parts = [
+        "【作品记忆】",
+        f"作品名：{book.title}",
+    ]
+    if book.description:
+        parts.append(f"作品简介：{book.description[:500]}")
+
+    if characters:
+        character_lines = []
+        for character in characters:
+            role = f"（{character.role}）" if character.role else ""
+            bio = f"：{character.bio[:120]}" if character.bio else ""
+            character_lines.append(f"- {character.name}{role}{bio}")
+        parts.append("【人物设定】\n" + "\n".join(character_lines))
+
+    if outlines:
+        outline_lines = [
+            f"- {outline.title}：{outline.content[:180]}" if outline.content else f"- {outline.title}"
+            for outline in outlines
+        ]
+        parts.append("【大纲/设定】\n" + "\n".join(outline_lines))
+
+    if previous_chapters:
         history_parts = []
-        for ch in prev_chapters:
-            # 取每章末尾 1500 字作为上下文（开头可能意义不大）
-            tail = ch.content[-1500:] if len(ch.content) > 1500 else ch.content
-            history_parts.append(f"【{ch.title}】\n{tail}")
-        parts.append("【前情提要——以下是小说的历史章节内容】\n" + "\n\n".join(history_parts))
+        for chapter in previous_chapters:
+            text = (chapter.content or "").strip()
+            if not text:
+                continue
+            tail = text[-1600:] if len(text) > 1600 else text
+            history_parts.append(f"【{chapter.title}】\n{tail}")
+        if history_parts:
+            parts.append("【最近前文章节】\n" + "\n\n".join(history_parts))
 
     if rag_context:
         parts.append(rag_context)
 
-    parts.append("【当前章节内容，请基于前情续写】\n" + content[:3000])
+    current = (current_content or "").strip()
+    if current:
+        parts.append("【当前章节草稿】\n" + current[:3000])
 
+    parts.append("【使用要求】回答必须严格承接同一本书的前文、人物关系和当前章节，不要凭空换主角、换世界观或重开剧情。")
     return "\n\n".join(parts)
+
+
+def _build_contextual_chat_prompt(message: str, story_memory: str) -> str:
+    return f"{story_memory}\n\n【用户问题】\n{message}"
+
+
+def _build_continue_prompt(content: str, story_memory: str) -> str:
+    """构建续写 prompt，带上历史章节作为上下文"""
+    current = content.strip()
+    current_block = current[:3000] if current else "当前章节还没有正文，请根据前文章节自然开启下一章。"
+    return (
+        f"{story_memory}\n\n"
+        "【续写任务】\n"
+        "请直接续写当前章节。必须延续最近前文中的情节因果、人物状态、称呼和叙事视角；"
+        "如果当前章节为空，就从上一章之后自然接下一章开头。不要总结，不要写大纲，不要解释。\n\n"
+        f"【当前续写位置】\n{current_block}"
+    )
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -100,12 +184,18 @@ async def ai_chat(
     db: AsyncSession = Depends(get_db),
 ):
     """AI对话（非流式）"""
-    await verify_book_access(data.book_id, current_user.id, db)
+    book = await verify_book_access(data.book_id, current_user.id, db)
 
     try:
-        user_msg = data.message
-        if data.current_content:
-            user_msg = f"当前章节内容：\n{data.current_content[:2000]}\n\n用户问题：\n{data.message}"
+        memory_query = data.current_content or data.message
+        story_memory = await _build_story_memory(
+            db,
+            book,
+            memory_query,
+            data.chapter_id,
+            data.current_content,
+        )
+        user_msg = _build_contextual_chat_prompt(data.message, story_memory)
 
         messages = build_messages("chat", user_msg, data.history)
         result = await call_siliconflow(messages, stream=False, model=data.model)
@@ -122,13 +212,19 @@ async def ai_chat_stream(
     db: AsyncSession = Depends(get_db),
 ):
     """AI对话（流式SSE）"""
-    await verify_book_access(data.book_id, current_user.id, db)
+    book = await verify_book_access(data.book_id, current_user.id, db)
 
     async def generate():
         try:
-            user_msg = data.message
-            if data.current_content:
-                user_msg = f"当前章节内容：\n{data.current_content[:2000]}\n\n用户问题：\n{data.message}"
+            memory_query = data.current_content or data.message
+            story_memory = await _build_story_memory(
+                db,
+                book,
+                memory_query,
+                data.chapter_id,
+                data.current_content,
+            )
+            user_msg = _build_contextual_chat_prompt(data.message, story_memory)
 
             messages = build_messages("chat", user_msg, data.history)
             async for chunk in await call_siliconflow(messages, stream=True, model=data.model):
@@ -159,20 +255,21 @@ async def ai_write(
     db: AsyncSession = Depends(get_db),
 ):
     """AI写作辅助（续写/润色/校对/摘要）"""
-    await verify_book_access(data.book_id, current_user.id, db)
+    book = await verify_book_access(data.book_id, current_user.id, db)
 
     try:
         command = data.command
         content = data.selected_text or data.content
 
         if command == "continue":
-            # 取历史章节上下文
-            prev_chapters = []
-            if data.chapter_id:
-                prev_chapters = await _get_previous_chapters(data.chapter_id, db)
-            # RAG: 搜索全书中与当前内容相关的段落作为背景
-            rag_context = await build_rag_context(db, content[:1000], data.book_id)
-            user_msg = _build_continue_prompt(content, rag_context, prev_chapters)
+            story_memory = await _build_story_memory(
+                db,
+                book,
+                content,
+                data.chapter_id,
+                data.content,
+            )
+            user_msg = _build_continue_prompt(content, story_memory)
         elif command == "improve":
             user_msg = f"请润色以下文本：\n\n{content[:3000]}"
         elif command == "fix":
@@ -197,7 +294,7 @@ async def ai_write_stream(
     db: AsyncSession = Depends(get_db),
 ):
     """AI写作辅助（流式SSE）—— 一个字一个字返回，不用等全部算完"""
-    await verify_book_access(data.book_id, current_user.id, db)
+    book = await verify_book_access(data.book_id, current_user.id, db)
 
     async def generate():
         try:
@@ -205,13 +302,14 @@ async def ai_write_stream(
             content = data.selected_text or data.content
 
             if command == "continue":
-                # 取历史章节上下文
-                prev_chapters = []
-                if data.chapter_id:
-                    prev_chapters = await _get_previous_chapters(data.chapter_id, db)
-                # RAG: 搜索全书中与当前内容相关的段落作为背景
-                rag_context = await build_rag_context(db, content[:1000], data.book_id)
-                user_msg = _build_continue_prompt(content, rag_context, prev_chapters)
+                story_memory = await _build_story_memory(
+                    db,
+                    book,
+                    content,
+                    data.chapter_id,
+                    data.content,
+                )
+                user_msg = _build_continue_prompt(content, story_memory)
             elif command == "improve":
                 user_msg = f"请润色以下文本：\n\n{content[:3000]}"
             elif command == "fix":

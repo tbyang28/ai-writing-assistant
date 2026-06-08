@@ -70,7 +70,7 @@ async function handleKeydown(e: KeyboardEvent) {
 }
 
 async function runCommand(command: string) {
-  if (!props.chapterContent) return
+  if (!props.chapterContent && command !== 'continue') return
 
   // 先加入一个空白 AI 消息，流式输出会逐字填充它
   aiStore.addMessage('assistant', '')
