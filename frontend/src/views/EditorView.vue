@@ -76,6 +76,27 @@ const outlines = computed(() => bookStore.currentBook?.outlines || [])
 const characters = computed(() => bookStore.currentBook?.characters || [])
 const characterRelations = computed(() => bookStore.currentBook?.character_relations || [])
 const inspirations = computed(() => bookStore.currentBook?.inspirations || [])
+const nextChapterOrder = computed(() => {
+  const maxOrder = chapters.value.reduce((max, chapter) => Math.max(max, chapter.order || 0), 0)
+  return maxOrder + 1
+})
+
+function chapterPrefix(order?: number) {
+  return `第${order || 1}章`
+}
+
+function chapterTitleText(title?: string) {
+  const trimmed = title?.trim()
+  return trimmed || '未命名章节'
+}
+
+function chapterDisplayTitle(chapter: Pick<Chapter, 'title' | 'order'>) {
+  return `${chapterPrefix(chapter.order)} ${chapterTitleText(chapter.title)}`
+}
+
+const activeChapterOrder = computed(() => {
+  return chapters.value.find((chapter) => chapter.id === activeChapterId.value)?.order
+})
 
 async function loadChapter(id: string) {
   activeChapterId.value = id
@@ -397,7 +418,7 @@ function stopDrag() {
             <div class="font-medium truncate"
               :class="activeChapterId === ch.id ? 'text-brand-700 dark:text-white' : ''"
               :style="activeChapterId === ch.id ? {} : { color: 'var(--text-primary)' }">
-              {{ ch.title }}
+              {{ chapterDisplayTitle(ch) }}
             </div>
             <div class="text-xs mt-0.5"
               :class="activeChapterId === ch.id ? 'text-brand-600 dark:text-brand-300' : ''"
@@ -502,7 +523,15 @@ function stopDrag() {
     <div class="flex-1 flex flex-col min-w-0" :style="{ backgroundColor: 'var(--surface)' }">
       <!-- Title bar -->
       <div class="h-12 flex items-center px-4 gap-2 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
-        <input v-if="workspaceMode === 'editor'" v-model="editorTitle" class="flex-1 text-base font-medium border-none outline-none bg-transparent" :style="{ color: 'var(--text-primary)' }" placeholder="章节标题" />
+        <template v-if="workspaceMode === 'editor'">
+          <span
+            class="shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold"
+            :style="{ color: 'var(--text-muted)', borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"
+          >
+            {{ chapterPrefix(activeChapterOrder) }}
+          </span>
+          <input v-model="editorTitle" class="flex-1 text-base font-medium border-none outline-none bg-transparent" :style="{ color: 'var(--text-primary)' }" placeholder="章节标题" />
+        </template>
         <div v-else class="flex-1 text-base font-medium" :style="{ color: 'var(--text-primary)' }">
           角色关系图
         </div>
@@ -588,6 +617,10 @@ function stopDrag() {
     <div v-if="showNewChapterModal" class="modal-overlay" @click.self="cancelNewChapter">
       <div class="modal-content">
         <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建章节</h3>
+        <div class="mb-3 rounded-lg border px-3 py-2 text-sm"
+          :style="{ color: 'var(--text-muted)', borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
+          即将创建 {{ chapterPrefix(nextChapterOrder) }}，填写标题后会显示为“{{ chapterPrefix(nextChapterOrder) }} {{ newChapterTitle.trim() || '章节标题' }}”。
+        </div>
         <input v-model="newChapterTitle" type="text" class="form-input" placeholder="章节标题" @keyup.enter="confirmNewChapter" />
         <div class="flex justify-end gap-3 mt-4">
           <button @click="cancelNewChapter" class="btn-secondary">取消</button>
