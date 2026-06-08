@@ -74,6 +74,19 @@ export interface BookStats {
   finishedBooks: number
 }
 
+function unwrapPayload<T = any>(res: any): T {
+  return (res?.data ?? res) as T
+}
+
+function normalizeBookList(payload: any): Book[] {
+  const value = unwrapPayload<any>(payload)
+  if (Array.isArray(value)) return value
+  if (Array.isArray(value?.books)) return value.books
+  if (Array.isArray(value?.items)) return value.items
+  if (Array.isArray(value?.results)) return value.results
+  return []
+}
+
 export const useBookStore = defineStore('book', () => {
   const books = ref<Book[]>([])
   const currentBook = ref<Book | null>(null)
@@ -87,7 +100,7 @@ export const useBookStore = defineStore('book', () => {
     isLoading.value = true
     try {
       const data: any = await apiGet('/books')
-      books.value = data.data || data || []
+      books.value = normalizeBookList(data)
       return books.value
     } finally {
       isLoading.value = false
@@ -98,7 +111,7 @@ export const useBookStore = defineStore('book', () => {
     isLoading.value = true
     try {
       const data: any = await apiGet(`/books/${id}`)
-      currentBook.value = data.data || data
+      currentBook.value = unwrapPayload<Book>(data)
       return currentBook.value
     } finally {
       isLoading.value = false
@@ -107,14 +120,14 @@ export const useBookStore = defineStore('book', () => {
 
   async function createBook(data: { title: string; description?: string; cover?: string }) {
     const res: any = await apiPost('/books', data)
-    const book = res.data || res
-    books.value.unshift(book)
+    const book = unwrapPayload<Book>(res)
+    books.value = [book, ...normalizeBookList(books.value)]
     return book
   }
 
   async function seedDemoBook() {
     const res: any = await apiPost('/demo/seed')
-    const book = res.data || res
+    const book = unwrapPayload<Book>(res)
     currentBook.value = book
     await Promise.all([fetchBooks(), fetchStats(), fetchWritingStats()])
     return book
