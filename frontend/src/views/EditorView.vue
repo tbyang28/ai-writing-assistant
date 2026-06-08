@@ -221,10 +221,13 @@ async function createInspiration() {
 
 async function deleteChapter(chapter: Chapter) {
   if (!confirm(`确定删除《${chapter.title}》吗？`)) return
+  const deletingActiveChapter = activeChapterId.value === chapter.id
+  const remainingChapters = chapters.value.filter((item) => item.id !== chapter.id)
+  const nextChapter = remainingChapters.find((item) => item.order > chapter.order) || remainingChapters[0]
   await bookStore.deleteChapter(chapter.id)
-  const chs = bookStore.currentBook?.chapters || []
-  if (chs.length > 0) {
-    await loadChapter(chs[0].id)
+  if (!deletingActiveChapter) return
+  if (nextChapter) {
+    await loadChapter(nextChapter.id)
   } else {
     activeChapterId.value = null
     editorContent.value = ''
@@ -385,21 +388,33 @@ function stopDrag() {
         </div>
         <div v-for="ch in chapters" :key="ch.id"
           @click="selectChapter(ch.id)"
-          class="px-3 py-2 cursor-pointer text-sm border-b border-l-4 transition-colors"
+          class="group flex items-start gap-2 px-3 py-2 cursor-pointer text-sm border-b border-l-4 transition-colors"
           :class="activeChapterId === ch.id
             ? 'border-l-brand bg-brand-50/80 dark:bg-brand-900/30 hover:bg-brand-50 dark:hover:bg-brand-900/40'
             : 'border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-800'"
           :style="{ borderBottomColor: 'var(--border-clr)' }">
-          <div class="font-medium truncate"
-            :class="activeChapterId === ch.id ? 'text-brand dark:text-white' : ''"
-            :style="activeChapterId === ch.id ? {} : { color: 'var(--text-primary)' }">
-            {{ ch.title }}
+          <div class="min-w-0 flex-1">
+            <div class="font-medium truncate"
+              :class="activeChapterId === ch.id ? 'text-brand dark:text-white' : ''"
+              :style="activeChapterId === ch.id ? {} : { color: 'var(--text-primary)' }">
+              {{ ch.title }}
+            </div>
+            <div class="text-xs mt-0.5"
+              :class="activeChapterId === ch.id ? 'text-brand-600 dark:text-brand-300' : ''"
+              :style="activeChapterId === ch.id ? {} : { color: 'var(--text-muted)' }">
+              {{ ch.word_count }}字
+            </div>
           </div>
-          <div class="text-xs mt-0.5"
-            :class="activeChapterId === ch.id ? 'text-brand-600 dark:text-brand-300' : ''"
-            :style="activeChapterId === ch.id ? {} : { color: 'var(--text-muted)' }">
-            {{ ch.word_count }}字
-          </div>
+          <button
+            type="button"
+            @click.stop="deleteChapter(ch)"
+            class="shrink-0 rounded-md px-1.5 py-0.5 text-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+            :class="'text-gray-400 hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-900/30 dark:hover:text-red-300'"
+            title="删除章节"
+            aria-label="删除章节"
+          >
+            删除
+          </button>
         </div>
         <div v-if="chapters.length === 0" class="text-center py-8 text-sm" :style="{ color: 'var(--text-muted)' }">
           暂无章节
