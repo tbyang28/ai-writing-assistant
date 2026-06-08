@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
+import { api } from '@/api'
 
 export const useAiStore = defineStore('ai', () => {
   const HISTORY_PREFIX = 'ai-writing-assistant:chat-history'
@@ -96,22 +96,33 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  function streamUrl(path: string) {
+    const baseURL = api.defaults.baseURL || '/api'
+    return `${baseURL.replace(/\/$/, '')}${path}`
+  }
+
+  async function parseErrorResponse(response: Response) {
+    try {
+      const data = await response.json()
+      return data?.detail || data?.message || `请求失败：${response.status}`
+    } catch {
+      return `请求失败：${response.status}`
+    }
+  }
+
   async function sendMessage(bookId: string, message: string, currentContent?: string, chapterId?: string) {
     isLoading.value = true
     error.value = null
     addMessage('user', message)
 
     try {
-      const token = localStorage.getItem('token')
-      const res = await axios.post('/api/ai/chat', {
+      const res = await api.post('/ai/chat', {
         book_id: bookId,
         message,
         chapter_id: chapterId,
         current_content: currentContent,
         history: chatMessages.value.slice(-10, -1).map(m => ({ role: m.role, content: m.content })),
         model: selectedModel.value || undefined,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
       })
       const data = res.data
       const payload = data.data || data
@@ -131,10 +142,11 @@ export const useAiStore = defineStore('ai', () => {
     isLoading.value = true
     error.value = null
     addMessage('user', message)
+    addMessage('assistant', '')
 
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('/api/ai/chat/stream', {
+      const response = await fetch(streamUrl('/ai/chat/stream'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -149,6 +161,12 @@ export const useAiStore = defineStore('ai', () => {
           model: selectedModel.value || undefined,
         }),
       })
+
+      if (!response.ok) {
+        const message = await parseErrorResponse(response)
+        replaceLastAssistantContent(message)
+        throw new Error(message)
+      }
 
       const reader = response.body?.getReader()
       if (!reader) throw new Error('No reader available')
@@ -171,14 +189,21 @@ export const useAiStore = defineStore('ai', () => {
           const dataStr = trimmed.slice(6)
           if (dataStr === '[DONE]') continue
 
+          let parsed: any
           try {
-            const parsed = JSON.parse(dataStr)
-            if (parsed.type === 'token') {
-              const text = parsed.data?.text || ''
-              fullText += text
-              onToken(text)
-            }
-          } catch { /* skip parse errors */ }
+            parsed = JSON.parse(dataStr)
+          } catch {
+            continue
+          }
+          if (parsed.type === 'token') {
+            const text = parsed.data?.text || ''
+            fullText += text
+            onToken(text)
+          } else if (parsed.type === 'error') {
+            const message = parsed.data?.message || 'AI 流式响应失败'
+            replaceLastAssistantContent(message)
+            throw new Error(message)
+          }
         }
       }
 
@@ -187,6 +212,9 @@ export const useAiStore = defineStore('ai', () => {
       return { answer: fullText }
     } catch (err: any) {
       error.value = err.message || '流式响应失败'
+      if (!chatMessages.value.at(-1)?.content) {
+        replaceLastAssistantContent(error.value)
+      }
       return null
     } finally {
       isLoading.value = false
@@ -199,7 +227,7 @@ export const useAiStore = defineStore('ai', () => {
 
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('/api/ai/write/stream', {
+      const response = await fetch(streamUrl('/ai/write/stream'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -214,6 +242,8 @@ export const useAiStore = defineStore('ai', () => {
           model: selectedModel.value || undefined,
         }),
       })
+
+      if (!response.ok) throw new Error(await parseErrorResponse(response))
 
       // 用 Streams API 读取 SSE 流，一段一段解析
       const reader = response.body?.getReader()
@@ -238,14 +268,19 @@ export const useAiStore = defineStore('ai', () => {
           const dataStr = trimmed.slice(6)
           if (dataStr === '[DONE]') continue
 
+          let parsed: any
           try {
-            const parsed = JSON.parse(dataStr)
-            if (parsed.type === 'token') {
-              const text = parsed.data?.text || ''
-              fullText += text
-              onToken(text)  // 回调：每收到一个字就通知前端更新
-            }
-          } catch { /* 跳过解析失败的 chunk */ }
+            parsed = JSON.parse(dataStr)
+          } catch {
+            continue
+          }
+          if (parsed.type === 'token') {
+            const text = parsed.data?.text || ''
+            fullText += text
+            onToken(text)  // 回调：每收到一个字就通知前端更新
+          } else if (parsed.type === 'error') {
+            throw new Error(parsed.data?.message || 'AI 流式响应失败')
+          }
         }
       }
 
@@ -264,12 +299,9 @@ export const useAiStore = defineStore('ai', () => {
     isLoading.value = true
     error.value = null
     try {
-      const token = localStorage.getItem('token')
-      const res = await axios.post('/api/ai/write', {
+      const res = await api.post('/ai/write', {
         book_id: bookId, content, command, chapter_id: chapterId, selected_text: selectedText,
         model: selectedModel.value || undefined,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
       })
       const data = res.data
       const result = data.data || data
@@ -288,15 +320,12 @@ export const useAiStore = defineStore('ai', () => {
     isLoading.value = true
     error.value = null
     try {
-      const token = localStorage.getItem('token')
-      const res = await axios.post('/api/ai/polish-diff', {
+      const res = await api.post('/ai/polish-diff', {
         book_id: bookId,
         content,
         chapter_id: chapterId,
         selected_text: selectedText,
         model: selectedModel.value || undefined,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
       })
       const result = (res.data.data || res.data) as PolishDiffResult
       lastResponse.value = result
@@ -313,14 +342,11 @@ export const useAiStore = defineStore('ai', () => {
     isLoading.value = true
     error.value = null
     try {
-      const token = localStorage.getItem('token')
-      const res = await axios.post('/api/ai/extract-characters', {
+      const res = await api.post('/ai/extract-characters', {
         book_id: bookId,
         content,
         chapter_id: chapterId,
         model: selectedModel.value || undefined,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
       })
       const result = res.data.data || res.data
       lastResponse.value = result
