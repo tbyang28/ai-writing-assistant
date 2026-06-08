@@ -10,6 +10,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import User, Book, Chapter, Outline, Character, CharacterRelation, Inspiration
 from app.services.rag_service import index_chapter
+from app.utils.chinese_number import to_chinese_number
 from app.schemas.book import (
     BookCreate, BookUpdate, BookListResponse, BookResponse, BookStats,
     ChapterCreate, ChapterUpdate, ChapterSave, ChapterResponse,
@@ -503,10 +504,11 @@ async def create_chapter(
     )
     max_order = max_order_result.scalar() or 0
 
+    order = max_order + 1
     chapter = Chapter(
-        title=data.title or "未命名章节",
+        title=data.title or f"第{to_chinese_number(order)}章",
         book_id=book_id,
-        order=max_order + 1,
+        order=order,
     )
     db.add(chapter)
     await db.commit()

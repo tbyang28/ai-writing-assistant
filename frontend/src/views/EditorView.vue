@@ -36,6 +36,7 @@ const dragStartWidth = ref(0)
 // New item modals
 const showNewChapterModal = ref(false)
 const newChapterTitle = ref('')
+const creatingChapter = ref(false)
 const showNewOutlineModal = ref(false)
 const newOutlineTitle = ref('')
 const showNewCharacterModal = ref(false)
@@ -113,14 +114,30 @@ function autoSave() {
 watch(editorContent, () => autoSave())
 watch(editorTitle, () => autoSave())
 
-async function createChapter() {
-  if (!newChapterTitle.value.trim()) return
-  const chapter = await bookStore.createChapter(bookId.value, { title: newChapterTitle.value.trim() })
+async function openNewChapter() {
   newChapterTitle.value = ''
-  showNewChapterModal.value = false
-  if (chapter?.id) {
-    await loadChapter(chapter.id)
+  showNewChapterModal.value = true
+}
+
+async function confirmNewChapter() {
+  if (creatingChapter.value) return
+  creatingChapter.value = true
+  try {
+    const title = newChapterTitle.value.trim()
+    const chapter = await bookStore.createChapter(bookId.value, title ? { title } : {})
+    showNewChapterModal.value = false
+    newChapterTitle.value = ''
+    if (chapter?.id) {
+      await loadChapter(chapter.id)
+    }
+  } finally {
+    creatingChapter.value = false
   }
+}
+
+function cancelNewChapter() {
+  showNewChapterModal.value = false
+  newChapterTitle.value = ''
 }
 
 async function createOutline() {
@@ -362,7 +379,7 @@ function stopDrag() {
       <!-- Chapters list -->
       <div v-if="!showOutline && !showCharacters" class="flex-1 overflow-y-auto">
         <div class="p-2">
-          <button @click="showNewChapterModal = true" class="w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
+          <button @click="openNewChapter" :disabled="creatingChapter" class="w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
             + 新建章节
           </button>
         </div>
@@ -524,7 +541,7 @@ function stopDrag() {
         <div v-else class="flex items-center justify-center h-full" :style="{ color: 'var(--text-muted)' }">
           <div class="text-center">
             <p class="mb-2">请选择或创建一个章节</p>
-            <button @click="showNewChapterModal = true" class="btn-primary text-sm">新建章节</button>
+            <button @click="openNewChapter" :disabled="creatingChapter" class="btn-primary text-sm">新建章节</button>
           </div>
         </div>
       </div>
@@ -553,13 +570,15 @@ function stopDrag() {
     />
 
     <!-- Modals -->
-    <div v-if="showNewChapterModal" class="modal-overlay" @click.self="showNewChapterModal = false">
+    <div v-if="showNewChapterModal" class="modal-overlay" @click.self="cancelNewChapter">
       <div class="modal-content">
         <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建章节</h3>
-        <input v-model="newChapterTitle" type="text" class="form-input" placeholder="章节标题" @keyup.enter="createChapter" />
+        <input v-model="newChapterTitle" type="text" class="form-input" placeholder="章节标题" @keyup.enter="confirmNewChapter" />
         <div class="flex justify-end gap-3 mt-4">
-          <button @click="showNewChapterModal = false" class="btn-secondary">取消</button>
-          <button @click="createChapter" :disabled="!newChapterTitle.trim()" class="btn-primary">创建</button>
+          <button @click="cancelNewChapter" class="btn-secondary">取消</button>
+          <button @click="confirmNewChapter" :disabled="creatingChapter" class="btn-primary">
+            {{ creatingChapter ? '创建中...' : '确定' }}
+          </button>
         </div>
       </div>
     </div>
