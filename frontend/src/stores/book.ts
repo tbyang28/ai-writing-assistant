@@ -156,9 +156,15 @@ export const useBookStore = defineStore('book', () => {
   async function seedDemoBook() {
     const res: any = await apiPost('/demo/seed')
     const book = normalizeBook(res)
-    currentBook.value = book
-    await Promise.all([fetchBooks(), fetchStats(), fetchWritingStats()])
-    return book
+    const [latestBooks] = await Promise.all([fetchBooks(), fetchStats(), fetchWritingStats()])
+    const resolvedBook = book.id
+      ? book
+      : latestBooks.find((item) => item.title === '雨巷边缘')
+    if (resolvedBook?.id) {
+      currentBook.value = resolvedBook
+      return resolvedBook
+    }
+    throw new Error('初始化示例作品后未找到作品 ID，请刷新后重试')
   }
 
   async function updateBook(id: string, data: { title?: string; description?: string; cover?: string; status?: string }) {

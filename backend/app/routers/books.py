@@ -172,6 +172,20 @@ def _word_count(text: str) -> int:
     return len(text.replace(" ", "").replace("\n", ""))
 
 
+def _book_list_payload(book: Book) -> dict:
+    return {
+        "id": book.id,
+        "title": book.title,
+        "cover": book.cover or "",
+        "description": book.description or "",
+        "status": book.status or "DRAFT",
+        "word_count": book.word_count or 0,
+        "owner_id": book.owner_id,
+        "created_at": book.created_at,
+        "updated_at": book.updated_at,
+    }
+
+
 # ===================== Books =====================
 
 @router.get("/books", response_model=list[BookListResponse])
@@ -183,7 +197,7 @@ async def list_books(
         select(Book).where(Book.owner_id == current_user.id).order_by(Book.updated_at.desc())
     )
     books = result.scalars().all()
-    return [BookListResponse.model_validate(b) for b in books]
+    return [_book_list_payload(b) for b in books]
 
 
 @router.get("/books/stats", response_model=BookStats)
@@ -310,17 +324,14 @@ async def get_book(
     if not book:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="作品不存在")
 
-    return BookResponse(
-        id=book.id, title=book.title, cover=book.cover,
-        description=book.description, status=book.status,
-        word_count=book.word_count, owner_id=book.owner_id,
-        created_at=book.created_at, updated_at=book.updated_at,
-        chapters=[ChapterResponse.model_validate(c) for c in (book.chapters or [])],
-        outlines=[OutlineResponse.model_validate(o) for o in (book.outlines or [])],
-        characters=[CharacterResponse.model_validate(c) for c in (book.characters or [])],
-        character_relations=[CharacterRelationResponse.model_validate(r) for r in (book.character_relations or [])],
-        inspirations=[InspirationResponse.model_validate(i) for i in (book.inspirations or [])],
-    )
+    return {
+        **_book_list_payload(book),
+        "chapters": [ChapterResponse.model_validate(c) for c in (book.chapters or [])],
+        "outlines": [OutlineResponse.model_validate(o) for o in (book.outlines or [])],
+        "characters": [CharacterResponse.model_validate(c) for c in (book.characters or [])],
+        "character_relations": [CharacterRelationResponse.model_validate(r) for r in (book.character_relations or [])],
+        "inspirations": [InspirationResponse.model_validate(i) for i in (book.inspirations or [])],
+    }
 
 
 @router.post("/demo/seed", response_model=BookResponse)
@@ -425,7 +436,7 @@ async def create_book(
     db.add(book)
     await db.commit()
     await db.refresh(book)
-    return BookListResponse.model_validate(book)
+    return _book_list_payload(book)
 
 
 @router.put("/books/{book_id}", response_model=BookListResponse)
