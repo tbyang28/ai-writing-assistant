@@ -74,7 +74,7 @@ async function createNewBook() {
       title: newBookTitle.value.trim(),
       description: newBookDescription.value.trim() || undefined,
     })
-    if (!book?.id) throw new Error('创建成功但没有返回作品 ID，请刷新后重试')
+    if (!book?.id) throw new Error('创建作品后未找到作品 ID，请刷新后重试')
     showNewBookModal.value = false
     newBookTitle.value = ''
     newBookDescription.value = ''
@@ -91,7 +91,7 @@ async function seedDemoBook() {
   isSeedingDemo.value = true
   try {
     const book = await bookStore.seedDemoBook()
-    if (!book?.id) throw new Error('初始化成功但没有返回作品 ID，请刷新后重试')
+    if (!book?.id) throw new Error('初始化示例作品后未找到作品 ID，请刷新后重试')
     await router.push(`/editor/${book.id}`)
   } catch (err: any) {
     seedError.value = err?.response?.data?.detail || err?.message || '初始化失败'

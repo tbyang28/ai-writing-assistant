@@ -99,9 +99,10 @@ function normalizeBookList(payload: any): Book[] {
 
 function normalizeBook(payload: any): Book {
   const value = unwrapPayload<any>(payload)
+  const nested = value?.book || value?.item || value?.result || value
   return {
-    ...value,
-    id: value?.id || value?.book_id || value?._id,
+    ...nested,
+    id: nested?.id || nested?.book_id || nested?._id,
   } as Book
 }
 
@@ -139,8 +140,17 @@ export const useBookStore = defineStore('book', () => {
   async function createBook(data: { title: string; description?: string; cover?: string }) {
     const res: any = await apiPost('/books', data)
     const book = normalizeBook(res)
-    books.value = [book, ...normalizeBookList(books.value)]
-    return book
+    if (book.id) {
+      books.value = [book, ...normalizeBookList(books.value)]
+      return book
+    }
+
+    console.warn('Create book response missing id, refetching books.', res)
+    const latestBooks = await fetchBooks()
+    const matched = latestBooks.find((item) => item.title === data.title)
+    if (matched?.id) return matched
+
+    throw new Error('创建成功但没有返回作品 ID，请刷新后重试')
   }
 
   async function seedDemoBook() {
