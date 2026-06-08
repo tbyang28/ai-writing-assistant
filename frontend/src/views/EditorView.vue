@@ -57,13 +57,16 @@ const selectionEnd = ref(0)
 const contentAreaRef = ref<HTMLDivElement | null>(null)
 
 onMounted(async () => {
-  if (bookId.value) {
-    await bookStore.fetchBook(bookId.value)
-    const chapters = bookStore.currentBook?.chapters || []
-    if (chapters.length > 0) {
-      activeChapterId.value = chapters[0].id
-      await loadChapter(chapters[0].id)
-    }
+  if (!bookId.value || bookId.value === 'undefined' || bookId.value === 'null') {
+    router.replace('/')
+    return
+  }
+
+  await bookStore.fetchBook(bookId.value)
+  const chapters = bookStore.currentBook?.chapters || []
+  if (chapters.length > 0) {
+    activeChapterId.value = chapters[0].id
+    await loadChapter(chapters[0].id)
   }
 })
 
@@ -112,9 +115,12 @@ watch(editorTitle, () => autoSave())
 
 async function createChapter() {
   if (!newChapterTitle.value.trim()) return
-  await bookStore.createChapter(bookId.value, { title: newChapterTitle.value.trim() })
+  const chapter = await bookStore.createChapter(bookId.value, { title: newChapterTitle.value.trim() })
   newChapterTitle.value = ''
   showNewChapterModal.value = false
+  if (chapter?.id) {
+    await loadChapter(chapter.id)
+  }
 }
 
 async function createOutline() {
