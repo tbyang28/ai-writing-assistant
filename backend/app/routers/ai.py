@@ -25,9 +25,16 @@ def _extract_ai_error(e: Exception) -> str:
     if isinstance(e, httpx.HTTPStatusError):
         try:
             body = e.response.json()
-            msg = body.get("message", str(e))
+            msg = (
+                body.get("message")
+                or body.get("detail")
+                or body.get("error", {}).get("message")
+                or str(e)
+            )
             if "insufficient" in msg.lower() or "余额" in msg:
                 return "SiliconFlow 账户余额不足，请充值后重试"
+            if e.response.status_code in (401, 403):
+                return "SiliconFlow API Key 无效或没有权限，请检查 Render 后端环境变量 SILICONFLOW_API_KEY"
             return f"AI 服务错误 ({e.response.status_code}): {msg}"
         except Exception:
             pass

@@ -110,6 +110,16 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  function parseAxiosError(err: any, fallback: string) {
+    return (
+      err?.response?.data?.detail ||
+      err?.response?.data?.message ||
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      fallback
+    )
+  }
+
   async function sendMessage(bookId: string, message: string, currentContent?: string, chapterId?: string) {
     isLoading.value = true
     error.value = null
@@ -131,7 +141,8 @@ export const useAiStore = defineStore('ai', () => {
       lastResponse.value = payload
       return payload
     } catch (err: any) {
-      error.value = err.message || 'AI 响应失败'
+      error.value = parseAxiosError(err, 'AI 响应失败')
+      addMessage('assistant', error.value)
       return null
     } finally {
       isLoading.value = false
@@ -309,7 +320,7 @@ export const useAiStore = defineStore('ai', () => {
       addMessage('assistant', answer)
       return result
     } catch (err: any) {
-      error.value = err.response?.data?.message || 'AI 写作辅助失败'
+      error.value = parseAxiosError(err, 'AI 写作辅助失败')
       return null
     } finally {
       isLoading.value = false

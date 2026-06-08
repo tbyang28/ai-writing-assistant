@@ -219,6 +219,9 @@ async def call_siliconflow(
         stream: 是否流式输出
         model: 模型 ID，为 None 时使用 settings.deepseek_model
     """
+    if not settings.siliconflow_api_key:
+        raise RuntimeError("Render 后端未配置 SILICONFLOW_API_KEY，无法调用 AI 服务")
+
     headers = {
         "Authorization": f"Bearer {settings.siliconflow_api_key}",
         "Content-Type": "application/json",
