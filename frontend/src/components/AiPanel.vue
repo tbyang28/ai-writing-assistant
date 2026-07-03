@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
 
 // 可选模型列表（显示名 → SiliconFlow model ID）
@@ -27,6 +27,31 @@ const inputText = ref('')
 const isComposing = ref(false)
 const compositionPending = ref(false)
 const polishDiffResult = ref<Awaited<ReturnType<typeof aiStore.polishDiff>> | null>(null)
+const diffInstruction = ref('')
+
+const diffStats = computed(() => {
+  const segments = polishDiffResult.value?.segments || []
+  let added = 0
+  let removed = 0
+  let modified = 0
+
+  for (let i = 0; i < segments.length; i += 1) {
+    const segment = segments[i]
+    const next = segments[i + 1]
+    if (segment.type === 'delete' && next?.type === 'insert') {
+      modified += 1
+      removed += segment.text.length
+      added += next.text.length
+      i += 1
+    } else if (segment.type === 'delete') {
+      removed += segment.text.length
+    } else if (segment.type === 'insert') {
+      added += segment.text.length
+    }
+  }
+
+  return { added, removed, modified }
+})
 
 onMounted(() => {
   aiStore.loadChatHistory(props.bookId, props.chapterId)
@@ -88,6 +113,7 @@ async function runPolishDiff() {
     props.chapterContent || '',
     props.selectedText || undefined,
     props.chapterId,
+    diffInstruction.value,
   )
 }
 
@@ -98,6 +124,11 @@ function applySuggestion(text: string) {
 function acceptPolishDiff() {
   if (!polishDiffResult.value?.revised) return
   emit('replaceText', polishDiffResult.value.revised)
+  polishDiffResult.value = null
+}
+
+function rejectPolishDiff() {
+  polishDiffResult.value = null
 }
 
 function handleStreamSend() {
@@ -174,6 +205,17 @@ function handleStreamSend() {
           摘要
         </button>
       </div>
+      <textarea
+        v-model="diffInstruction"
+        rows="2"
+        placeholder="修改要求（可选），例如：更有画面感、压缩节奏、保留人物语气"
+        class="mt-2 w-full text-xs border rounded-lg px-2.5 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition-colors"
+        :style="{
+          backgroundColor: 'var(--surface-secondary)',
+          borderColor: 'var(--border-clr)',
+          color: 'var(--text-primary)'
+        }"
+      ></textarea>
     </div>
 
     <!-- Chat Messages -->
@@ -201,14 +243,37 @@ function handleStreamSend() {
         :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
         <div class="flex items-center justify-between gap-2">
           <div>
-            <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">Diff 润色建议</div>
+            <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">AI 修改审阅</div>
             <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">
               {{ selectedText ? '替换当前选中文本' : '未选中文本，将替换整章内容' }}
             </div>
           </div>
-          <button @click="acceptPolishDiff" class="btn-primary text-xs px-2 py-1">
-            接受
-          </button>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button @click="rejectPolishDiff" class="btn-secondary text-xs px-2 py-1">
+              拒绝
+            </button>
+            <button @click="runPolishDiff" :disabled="aiStore.isLoading" class="btn-secondary text-xs px-2 py-1 disabled:opacity-50">
+              重试
+            </button>
+            <button @click="acceptPolishDiff" class="btn-primary text-xs px-2 py-1">
+              接受
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+          <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
+            <span class="font-semibold text-green-600 dark:text-green-300">+{{ diffStats.added }}</span>
+            <span class="ml-1">新增</span>
+          </div>
+          <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
+            <span class="font-semibold text-red-600 dark:text-red-300">-{{ diffStats.removed }}</span>
+            <span class="ml-1">删除</span>
+          </div>
+          <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
+            <span class="font-semibold text-amber-600 dark:text-amber-300">{{ diffStats.modified }}</span>
+            <span class="ml-1">处替换</span>
+          </div>
         </div>
 
         <div v-if="polishDiffResult.summary.length" class="space-y-1">
@@ -221,13 +286,19 @@ function handleStreamSend() {
         </div>
 
         <div class="space-y-1">
-          <div class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">对比预览</div>
-          <div class="text-sm leading-relaxed whitespace-pre-wrap rounded p-2 max-h-52 overflow-y-auto"
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">对比预览</div>
+            <div class="flex items-center gap-2 text-[11px]" :style="{ color: 'var(--text-muted)' }">
+              <span><span class="inline-block w-2 h-2 rounded-sm bg-red-200 dark:bg-red-900/70"></span> 删除</span>
+              <span><span class="inline-block w-2 h-2 rounded-sm bg-green-200 dark:bg-green-900/70"></span> 新增</span>
+            </div>
+          </div>
+          <div class="text-sm leading-relaxed whitespace-pre-wrap rounded p-2 max-h-64 overflow-y-auto font-serif"
             :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">
             <template v-for="(segment, idx) in polishDiffResult.segments" :key="idx">
               <span v-if="segment.type === 'equal'">{{ segment.text }}</span>
-              <del v-else-if="segment.type === 'delete'" class="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">{{ segment.text }}</del>
-              <ins v-else class="no-underline bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">{{ segment.text }}</ins>
+              <del v-else-if="segment.type === 'delete'" class="px-0.5 rounded bg-red-100 text-red-700 decoration-red-500 dark:bg-red-900/40 dark:text-red-300">{{ segment.text }}</del>
+              <ins v-else class="px-0.5 rounded no-underline bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">{{ segment.text }}</ins>
             </template>
           </div>
         </div>

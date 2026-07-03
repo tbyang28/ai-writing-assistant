@@ -348,14 +348,29 @@ async def ai_polish_diff(
     db: AsyncSession = Depends(get_db),
 ):
     """AI 润色并返回可审阅的 diff 对比。"""
-    await verify_book_access(data.book_id, current_user.id, db)
+    book = await verify_book_access(data.book_id, current_user.id, db)
 
     original = (data.selected_text or data.content or "").strip()
     if not original:
         raise HTTPException(status_code=400, detail="需要提供待润色文本")
 
     try:
-        user_msg = f"请润色以下小说片段，只输出润色后的正文：\n\n{original[:3000]}"
+        instruction = (data.instruction or "在保留原意和剧情的基础上，让文字更自然、更有画面感。").strip()
+        story_memory = await _build_story_memory(
+            db,
+            book,
+            original,
+            data.chapter_id,
+            data.content,
+        )
+        user_msg = (
+            f"{story_memory}\n\n"
+            "【AI 修改审阅任务】\n"
+            "请根据用户要求修改待处理文本。只输出修改后的正文，不要解释、不要标题、不要列修改点。\n"
+            "必须保留原文核心情节、人物关系、叙事视角和上下文一致性；不要新增与作品记忆冲突的设定。\n\n"
+            f"【用户修改要求】\n{instruction}\n\n"
+            f"【待处理文本】\n{original[:3000]}"
+        )
         messages = build_messages("polish_diff", user_msg)
         result = await call_siliconflow(messages, stream=False, model=data.model)
         revised = (result.get("answer") or "").strip()
@@ -367,6 +382,7 @@ async def ai_polish_diff(
                 "revised": revised,
                 "segments": segments,
                 "summary": summarize_diff(segments),
+                "instruction": instruction,
             }
         }
     except Exception as e:

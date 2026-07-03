@@ -1,15 +1,8 @@
 import axios from 'axios'
 
-const DEPLOYED_API_URL = 'https://ai-writing-assistant-api-o4nb.onrender.com/api'
-
 function resolveApiUrl() {
   const configured = import.meta.env.VITE_API_URL
-  if (window.location.hostname === 'ai-writing-assistant-web.onrender.com') {
-    return configured?.includes('ai-writing-assistant-api-o4nb.onrender.com')
-      ? configured
-      : DEPLOYED_API_URL
-  }
-  return configured || '/api'
+  return configured?.replace(/\/$/, '') || '/api'
 }
 
 const API_URL = resolveApiUrl()

@@ -34,6 +34,7 @@ class AiPolishDiffRequest(BaseModel):
     content: str
     chapter_id: Optional[str] = None
     selected_text: Optional[str] = None
+    instruction: Optional[str] = None
     model: Optional[str] = None  # SiliconFlow model ID, None = use default
 
 

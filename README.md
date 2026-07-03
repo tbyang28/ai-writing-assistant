@@ -212,16 +212,20 @@ docker-compose down
 | `ai-writing-assistant-api` | Web Service | FastAPI 后端，使用 Docker 部署 |
 | `ai-writing-assistant-web` | Static Site | Vue3 前端，构建后托管静态资源 |
 
-部署时需要配置：
+部署步骤：
 
-- 后端环境变量 `SILICONFLOW_API_KEY`
-- 前端环境变量 `VITE_API_URL`，值为后端地址加 `/api`
+1. 将代码推送到 GitHub。
+2. 在 Render Dashboard 选择 **New +** → **Blueprint**，连接该仓库。
+3. 创建时填写后端环境变量 `SILICONFLOW_API_KEY`。
+4. 将前端环境变量 `VITE_API_URL` 设置为后端地址加 `/api`。如果第一次创建时还不知道后端最终域名，可以先按服务名填写，创建完成后再在 Static Site 环境变量里修正并重新部署前端。
 
 示例：
 
 ```env
-VITE_API_URL=https://ai-writing-assistant-api-o4nb.onrender.com/api
+VITE_API_URL=https://你的后端服务地址.onrender.com/api
 ```
+
+后端默认使用 SQLite，Render 配置中的数据库文件路径为 `/app/data/writing_platform.db`。这适合作品集 Demo；如果需要长期保存真实用户数据，建议后续换成 Render PostgreSQL 或给服务配置持久化磁盘。
 
 Render 负责构建、托管和提供公网访问地址，适合把项目快速部署成可在线体验的作品集 Demo。
 

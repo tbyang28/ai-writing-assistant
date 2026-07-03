@@ -21,6 +21,7 @@ export const useAiStore = defineStore('ai', () => {
     revised: string
     segments: Array<{ type: 'equal' | 'insert' | 'delete'; text: string }>
     summary: string[]
+    instruction?: string
   }
 
   type ExtractedCharacter = {
@@ -327,7 +328,7 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  async function polishDiff(bookId: string, content: string, selectedText?: string, chapterId?: string) {
+  async function polishDiff(bookId: string, content: string, selectedText?: string, chapterId?: string, instruction?: string) {
     isLoading.value = true
     error.value = null
     try {
@@ -336,6 +337,7 @@ export const useAiStore = defineStore('ai', () => {
         content,
         chapter_id: chapterId,
         selected_text: selectedText,
+        instruction: instruction?.trim() || undefined,
         model: selectedModel.value || undefined,
       })
       const result = (res.data.data || res.data) as PolishDiffResult

@@ -10,7 +10,7 @@ services:
       - key: PORT
         value: "10000"
       - key: DATABASE_URL
-        value: sqlite+aiosqlite:///./writing_platform.db
+        value: sqlite+aiosqlite:////app/data/writing_platform.db
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
@@ -38,4 +38,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: https://ai-writing-assistant-api-o4nb.onrender.com/api
+        sync: false

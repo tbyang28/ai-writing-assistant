@@ -11,6 +11,10 @@ venv/
 .env.local
 .env.production
 
+# Frontend
+node_modules/
+frontend/node_modules/
+
 # Database
 *.db
 *.sqlite
