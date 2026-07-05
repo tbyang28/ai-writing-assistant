@@ -126,6 +126,11 @@ class TestTextDiff:
         assert {"type": "delete", "text": "慢慢的"} in segments
         assert {"type": "insert", "text": "缓缓"} in segments
 
+    def test_build_text_diff_merges_short_equal_bridges(self):
+        segments = build_text_diff("他慢慢走到门前。", "他缓缓走到门口。")
+        assert {"type": "delete", "text": "慢慢走到门前"} in segments
+        assert {"type": "insert", "text": "缓缓走到门口"} in segments
+
     def test_summarize_diff_for_replace_pair(self):
         segments = [
             {"type": "equal", "text": "他"},
@@ -135,6 +140,15 @@ class TestTextDiff:
         ]
         summaries = summarize_diff(segments)
         assert summaries[0] == "将「慢慢的」改为「缓缓」"
+
+    def test_summarize_diff_keeps_longer_context(self):
+        old_text = "他深吸一口气，目光坚定地看向前方，掌心的血迹顺着指缝落下，手指缓缓收紧。"
+        new_text = "他深吸一口气，眼神坚毅地望向前方，掌心的血迹顺着指缝落下，手指缓缓收紧。"
+        summaries = summarize_diff([
+            {"type": "delete", "text": old_text},
+            {"type": "insert", "text": new_text},
+        ])
+        assert "手指缓缓收紧" in summaries[0]
 
 
 class TestCharacterExtraction:

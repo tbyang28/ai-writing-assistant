@@ -67,10 +67,11 @@ SYSTEM_PROMPTS = {
     "polish_diff": """你是小说润色引擎。你的唯一任务是输出润色后的小说正文。
 
 要求：
-1. 保留原文核心情节、人物关系、叙事视角和语气
-2. 优化病句、重复表达、节奏拖沓和不自然措辞
-3. 不要扩写成新情节，不要添加解释、标题、修改说明或前后对比
-4. 只输出润色后的正文，输出的第一个字必须是正文第一个字""",
+1. 严格按用户要求修改，不要主动大范围改写
+2. 保留原文核心情节、人物关系、叙事视角、语气和信息顺序
+3. 只优化确有必要的病句、重复表达、节奏拖沓和不自然措辞
+4. 不要扩写成新情节，不要新增设定，不要添加解释、标题、修改说明或前后对比
+5. 只输出润色后的正文，输出的第一个字必须是正文第一个字""",
 
     "fix": """你是小说校对引擎。你的唯一任务是输出校对后的小说正文。
 
@@ -120,32 +121,50 @@ def build_text_diff(original: str, revised: str) -> list[dict[str, str]]:
     """Build a compact character-level diff for Chinese prose."""
     matcher = SequenceMatcher(None, original, revised)
     segments: list[dict[str, str]] = []
+    pending_old: list[str] = []
+    pending_new: list[str] = []
+    opcodes = matcher.get_opcodes()
 
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+    def flush_pending():
+        if pending_old:
+            segments.append({"type": "delete", "text": "".join(pending_old)})
+            pending_old.clear()
+        if pending_new:
+            segments.append({"type": "insert", "text": "".join(pending_new)})
+            pending_new.clear()
+
+    for idx, (tag, i1, i2, j1, j2) in enumerate(opcodes):
         if tag == "equal":
             text = original[i1:i2]
-            if text:
-                segments.append({"type": "equal", "text": text})
+            next_tag = opcodes[idx + 1][0] if idx + 1 < len(opcodes) else "equal"
+            if (pending_old or pending_new) and 0 < len(text) <= 4 and next_tag != "equal":
+                pending_old.append(text)
+                pending_new.append(text)
+            else:
+                flush_pending()
+                if text:
+                    segments.append({"type": "equal", "text": text})
         elif tag == "delete":
             text = original[i1:i2]
             if text:
-                segments.append({"type": "delete", "text": text})
+                pending_old.append(text)
         elif tag == "insert":
             text = revised[j1:j2]
             if text:
-                segments.append({"type": "insert", "text": text})
+                pending_new.append(text)
         elif tag == "replace":
             old_text = original[i1:i2]
             new_text = revised[j1:j2]
             if old_text:
-                segments.append({"type": "delete", "text": old_text})
+                pending_old.append(old_text)
             if new_text:
-                segments.append({"type": "insert", "text": new_text})
+                pending_new.append(new_text)
 
+    flush_pending()
     return segments
 
 
-def summarize_diff(segments: list[dict[str, str]], limit: int = 6) -> list[str]:
+def summarize_diff(segments: list[dict[str, str]], limit: int = 6, excerpt_len: int = 48) -> list[str]:
     """Create short human-readable change summaries for the UI."""
     summaries: list[str] = []
     i = 0
@@ -157,18 +176,18 @@ def summarize_diff(segments: list[dict[str, str]], limit: int = 6) -> list[str]:
             old = current["text"].strip()
             new = next_segment["text"].strip()
             if old or new:
-                summaries.append(f"将「{old[:24]}」改为「{new[:24]}」")
+                summaries.append(f"将「{old[:excerpt_len]}」改为「{new[:excerpt_len]}」")
             i += 2
             continue
 
         if current["type"] == "delete":
             text = current["text"].strip()
             if text:
-                summaries.append(f"删除「{text[:24]}」")
+                summaries.append(f"删除「{text[:excerpt_len]}」")
         elif current["type"] == "insert":
             text = current["text"].strip()
             if text:
-                summaries.append(f"新增「{text[:24]}」")
+                summaries.append(f"新增「{text[:excerpt_len]}」")
         i += 1
 
     return summaries

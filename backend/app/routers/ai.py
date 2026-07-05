@@ -355,34 +355,40 @@ async def ai_polish_diff(
         raise HTTPException(status_code=400, detail="需要提供待润色文本")
 
     try:
+        original_for_ai = original[:3000]
+        original_tail = original[3000:]
         instruction = (data.instruction or "在保留原意和剧情的基础上，让文字更自然、更有画面感。").strip()
         story_memory = await _build_story_memory(
             db,
             book,
-            original,
+            original_for_ai,
             data.chapter_id,
             data.content,
         )
         user_msg = (
             f"{story_memory}\n\n"
             "【AI 修改审阅任务】\n"
-            "请根据用户要求修改待处理文本。只输出修改后的正文，不要解释、不要标题、不要列修改点。\n"
+            "请根据用户要求修改待处理文本，只修改必要之处。只输出修改后的正文，不要解释、不要标题、不要列修改点。\n"
             "必须保留原文核心情节、人物关系、叙事视角和上下文一致性；不要新增与作品记忆冲突的设定。\n\n"
             f"【用户修改要求】\n{instruction}\n\n"
-            f"【待处理文本】\n{original[:3000]}"
+            f"【待处理文本】\n{original_for_ai}"
         )
         messages = build_messages("polish_diff", user_msg)
         result = await call_siliconflow(messages, stream=False, model=data.model)
-        revised = (result.get("answer") or "").strip()
-        segments = build_text_diff(original, revised)
+        revised_for_ai = (result.get("answer") or "").strip()
+        revised = revised_for_ai + original_tail
+        segments = build_text_diff(original_for_ai, revised_for_ai)
 
         return {
             "data": {
-                "original": original,
+                "original": original_for_ai,
                 "revised": revised,
                 "segments": segments,
                 "summary": summarize_diff(segments),
                 "instruction": instruction,
+                "truncated": bool(original_tail),
+                "original_length": len(original),
+                "processed_length": len(original_for_ai),
             }
         }
     except Exception as e:

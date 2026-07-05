@@ -24,6 +24,7 @@ const workspaceMode = ref<'editor' | 'graph'>('editor')
 // Undo for AI insert
 const undoSnapshot = ref('')
 const showAiUndo = ref(false)
+const aiUndoMessage = ref('已插入 AI 内容')
 let undoHideTimer: ReturnType<typeof setTimeout> | null = null
 
 // Resizable panels
@@ -260,6 +261,7 @@ function applyAiText(text: string) {
   if (text) {
     undoSnapshot.value = editorContent.value
     editorContent.value += text
+    aiUndoMessage.value = '已插入 AI 内容'
     showAiUndo.value = true
     if (undoHideTimer) clearTimeout(undoHideTimer)
     undoHideTimer = setTimeout(() => { showAiUndo.value = false }, 5000)
@@ -269,6 +271,7 @@ function applyAiText(text: string) {
 function replaceAiText(text: string) {
   if (!text) return
   undoSnapshot.value = editorContent.value
+  aiUndoMessage.value = '已应用 AI 修改'
 
   if (selectionEnd.value > selectionStart.value) {
     editorContent.value =
@@ -576,7 +579,7 @@ function stopDrag() {
           <div v-if="showAiUndo"
             class="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-lg shadow-lg text-sm z-50"
             :style="{ backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border-clr)' }">
-            <span>已插入 AI 内容</span>
+            <span>{{ aiUndoMessage }}</span>
             <button @click="undoAiInsert"
               class="text-brand font-semibold hover:opacity-80 text-sm">撤销</button>
             <button @click="showAiUndo = false" class="ml-1 opacity-50 hover:opacity-100 text-xs">✕</button>

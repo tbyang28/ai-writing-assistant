@@ -22,6 +22,9 @@ export const useAiStore = defineStore('ai', () => {
     segments: Array<{ type: 'equal' | 'insert' | 'delete'; text: string }>
     summary: string[]
     instruction?: string
+    truncated?: boolean
+    original_length?: number
+    processed_length?: number
   }
 
   type ExtractedCharacter = {

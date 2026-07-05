@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
 
 // 可选模型列表（显示名 → SiliconFlow model ID）
@@ -28,29 +28,41 @@ const isComposing = ref(false)
 const compositionPending = ref(false)
 const polishDiffResult = ref<Awaited<ReturnType<typeof aiStore.polishDiff>> | null>(null)
 const diffInstruction = ref('')
+const diffInstructionRef = ref<HTMLTextAreaElement | null>(null)
+const isDiffLoading = ref(false)
+const showDiffControls = ref(false)
+const showSideBySide = ref(false)
+
+const diffTargetReady = computed(() => Boolean(props.selectedText || props.chapterContent))
+const diffTargetLabel = computed(() => (
+  props.selectedText ? '范围：当前选中文本' : '范围：整章内容'
+))
+const diffRevisedPreview = computed(() => {
+  const result = polishDiffResult.value
+  if (!result) return ''
+  return result.revised.slice(0, result.processed_length ?? result.revised.length)
+})
 
 const diffStats = computed(() => {
   const segments = polishDiffResult.value?.segments || []
-  let added = 0
-  let removed = 0
-  let modified = 0
+  let addedChars = 0
+  let removedChars = 0
+  let replacements = 0
 
   for (let i = 0; i < segments.length; i += 1) {
     const segment = segments[i]
     const next = segments[i + 1]
     if (segment.type === 'delete' && next?.type === 'insert') {
-      modified += 1
-      removed += segment.text.length
-      added += next.text.length
+      replacements += 1
       i += 1
     } else if (segment.type === 'delete') {
-      removed += segment.text.length
+      removedChars += segment.text.length
     } else if (segment.type === 'insert') {
-      added += segment.text.length
+      addedChars += segment.text.length
     }
   }
 
-  return { added, removed, modified }
+  return { addedChars, removedChars, replacements }
 })
 
 onMounted(() => {
@@ -107,14 +119,22 @@ async function runCommand(command: string) {
 
 async function runPolishDiff() {
   const target = props.selectedText || props.chapterContent
-  if (!target || aiStore.isLoading) return
-  polishDiffResult.value = await aiStore.polishDiff(
-    props.bookId,
-    props.chapterContent || '',
-    props.selectedText || undefined,
-    props.chapterId,
-    diffInstruction.value,
-  )
+  if (!target || isDiffLoading.value || aiStore.isLoading) return
+  showDiffControls.value = true
+  showSideBySide.value = false
+  polishDiffResult.value = null
+  isDiffLoading.value = true
+  try {
+    polishDiffResult.value = await aiStore.polishDiff(
+      props.bookId,
+      props.chapterContent || '',
+      props.selectedText || undefined,
+      props.chapterId,
+      diffInstruction.value,
+    )
+  } finally {
+    isDiffLoading.value = false
+  }
 }
 
 function applySuggestion(text: string) {
@@ -125,10 +145,30 @@ function acceptPolishDiff() {
   if (!polishDiffResult.value?.revised) return
   emit('replaceText', polishDiffResult.value.revised)
   polishDiffResult.value = null
+  showDiffControls.value = false
+  showSideBySide.value = false
 }
 
 function rejectPolishDiff() {
   polishDiffResult.value = null
+  showDiffControls.value = false
+  showSideBySide.value = false
+}
+
+function focusDiffInstruction() {
+  nextTick(() => {
+    diffInstructionRef.value?.focus()
+  })
+}
+
+function openDiffReview() {
+  showDiffControls.value = true
+  focusDiffInstruction()
+}
+
+function retryPolishDiff() {
+  showDiffControls.value = true
+  focusDiffInstruction()
 }
 
 function handleStreamSend() {
@@ -186,7 +226,7 @@ function handleStreamSend() {
             dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50">
           润色
         </button>
-        <button @click="runPolishDiff" :disabled="aiStore.isLoading || !(selectedText || chapterContent)"
+        <button @click="openDiffReview" :disabled="aiStore.isLoading || !diffTargetReady"
           class="px-2.5 py-1.5 text-xs rounded-lg font-medium disabled:opacity-50 transition-colors
             bg-emerald-50 text-emerald-700 hover:bg-emerald-100
             dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50">
@@ -205,24 +245,39 @@ function handleStreamSend() {
           摘要
         </button>
       </div>
-      <textarea
-        v-model="diffInstruction"
-        rows="2"
-        placeholder="修改要求（可选），例如：更有画面感、压缩节奏、保留人物语气"
-        class="mt-2 w-full text-xs border rounded-lg px-2.5 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition-colors"
-        :style="{
-          backgroundColor: 'var(--surface-secondary)',
-          borderColor: 'var(--border-clr)',
-          color: 'var(--text-primary)'
-        }"
-      ></textarea>
     </div>
 
     <!-- Chat Messages -->
     <div class="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-      <div v-if="aiStore.chatMessages.length === 0" class="text-center py-8">
+      <div v-if="aiStore.chatMessages.length === 0 && !showDiffControls && !polishDiffResult && !isDiffLoading" class="text-center py-8">
         <p class="text-sm" :style="{ color: 'var(--text-muted)' }">在下方输入问题与 AI 对话</p>
         <p class="text-xs mt-1" :style="{ color: 'var(--text-muted)' }">或使用快捷操作按钮</p>
+      </div>
+
+      <div v-if="showDiffControls" class="rounded-lg border p-3 space-y-2"
+        :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">Diff 润色要求</div>
+            <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ diffTargetLabel }}</div>
+          </div>
+          <button @click="runPolishDiff" :disabled="isDiffLoading || aiStore.isLoading || !diffTargetReady"
+            class="btn-primary text-xs px-2.5 py-1.5 disabled:opacity-50 shrink-0">
+            {{ isDiffLoading ? '生成中...' : polishDiffResult ? '重新生成' : '生成审阅' }}
+          </button>
+        </div>
+        <textarea
+          ref="diffInstructionRef"
+          v-model="diffInstruction"
+          rows="3"
+          placeholder="更有画面感、压缩节奏、保留人物语气"
+          class="w-full text-xs border rounded-lg px-2.5 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition-colors"
+          :style="{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'var(--border-clr)',
+            color: 'var(--text-primary)'
+          }"
+        ></textarea>
       </div>
 
       <div v-for="(msg, idx) in aiStore.chatMessages" :key="idx" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
@@ -239,21 +294,30 @@ function handleStreamSend() {
         </div>
       </div>
 
+      <div v-if="isDiffLoading" class="rounded-lg border p-3"
+        :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
+        <div class="flex items-center gap-2 text-sm" :style="{ color: 'var(--text-secondary)' }">
+          <div class="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          正在生成 AI 修改审阅...
+        </div>
+        <div class="text-xs mt-1 pl-6" :style="{ color: 'var(--text-muted)' }">非流式润色，稍等片刻</div>
+      </div>
+
       <div v-if="polishDiffResult" class="rounded-lg border p-3 space-y-3"
         :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
         <div class="flex items-center justify-between gap-2">
           <div>
             <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">AI 修改审阅</div>
             <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">
-              {{ selectedText ? '替换当前选中文本' : '未选中文本，将替换整章内容' }}
+              {{ selectedText ? '接受后替换当前选中文本' : '接受后替换整章内容' }}
             </div>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
             <button @click="rejectPolishDiff" class="btn-secondary text-xs px-2 py-1">
               拒绝
             </button>
-            <button @click="runPolishDiff" :disabled="aiStore.isLoading" class="btn-secondary text-xs px-2 py-1 disabled:opacity-50">
-              重试
+            <button @click="retryPolishDiff" class="btn-secondary text-xs px-2 py-1">
+              调整重试
             </button>
             <button @click="acceptPolishDiff" class="btn-primary text-xs px-2 py-1">
               接受
@@ -261,17 +325,23 @@ function handleStreamSend() {
           </div>
         </div>
 
+        <div v-if="polishDiffResult.truncated" class="text-xs rounded px-2 py-1.5"
+          :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
+          本次只审阅前 {{ polishDiffResult.processed_length }} 字，接受后会保留剩余
+          {{ (polishDiffResult.original_length || 0) - (polishDiffResult.processed_length || 0) }} 字原文。
+        </div>
+
         <div class="grid grid-cols-3 gap-2 text-center text-xs">
           <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold text-green-600 dark:text-green-300">+{{ diffStats.added }}</span>
-            <span class="ml-1">新增</span>
+            <span class="font-semibold text-green-600 dark:text-green-300">+{{ diffStats.addedChars }}</span>
+            <span class="ml-1">纯新增字</span>
           </div>
           <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold text-red-600 dark:text-red-300">-{{ diffStats.removed }}</span>
-            <span class="ml-1">删除</span>
+            <span class="font-semibold text-red-600 dark:text-red-300">-{{ diffStats.removedChars }}</span>
+            <span class="ml-1">纯删除字</span>
           </div>
           <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold text-amber-600 dark:text-amber-300">{{ diffStats.modified }}</span>
+            <span class="font-semibold text-amber-600 dark:text-amber-300">{{ diffStats.replacements }}</span>
             <span class="ml-1">处替换</span>
           </div>
         </div>
@@ -303,26 +373,32 @@ function handleStreamSend() {
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">原文</div>
-            <div class="text-xs leading-relaxed whitespace-pre-wrap rounded p-2 max-h-32 overflow-y-auto"
-              :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
-              {{ polishDiffResult.original }}
+        <div class="space-y-2">
+          <button @click="showSideBySide = !showSideBySide" class="text-xs hover:opacity-80"
+            :style="{ color: 'var(--text-muted)' }">
+            {{ showSideBySide ? '收起原文/润色后' : '展开原文/润色后' }}
+          </button>
+          <div v-if="showSideBySide" class="grid grid-cols-2 gap-2">
+            <div>
+              <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">原文</div>
+              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded p-2 max-h-32 overflow-y-auto"
+                :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
+                {{ polishDiffResult.original }}
+              </div>
             </div>
-          </div>
-          <div>
-            <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">润色后</div>
-            <div class="text-xs leading-relaxed whitespace-pre-wrap rounded p-2 max-h-32 overflow-y-auto"
-              :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
-              {{ polishDiffResult.revised }}
+            <div>
+              <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">润色后</div>
+              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded p-2 max-h-32 overflow-y-auto"
+                :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
+                {{ diffRevisedPreview }}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Loading -->
-      <div v-if="aiStore.isLoading" class="flex items-center gap-2 text-sm" :style="{ color: 'var(--text-muted)' }">
+      <div v-if="aiStore.isLoading && !isDiffLoading" class="flex items-center gap-2 text-sm" :style="{ color: 'var(--text-muted)' }">
         <div class="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin"></div>
         AI 思考中...
       </div>
