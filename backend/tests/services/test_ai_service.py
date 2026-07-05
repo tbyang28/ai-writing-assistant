@@ -9,6 +9,7 @@ import pytest
 from app.services.ai_service import (
     build_messages, build_text_diff, summarize_diff,
     parse_character_extraction, SYSTEM_PROMPTS,
+    estimate_polish_diff_max_tokens,
 )
 
 
@@ -149,6 +150,10 @@ class TestTextDiff:
             {"type": "insert", "text": new_text},
         ])
         assert "手指缓缓收紧" in summaries[0]
+
+    def test_estimate_polish_diff_max_tokens_scales_with_text(self):
+        assert estimate_polish_diff_max_tokens("短文本") == 512
+        assert estimate_polish_diff_max_tokens("字" * 3000) == 4096
 
 
 class TestCharacterExtraction:

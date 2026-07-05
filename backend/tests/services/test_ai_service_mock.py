@@ -58,6 +58,30 @@ class TestCallSiliconflowMocked:
         assert body["max_tokens"] == 4096
         assert len(body["messages"]) == 1
 
+    async def test_custom_generation_options(self, httpx_mock):
+        """调用方可以收紧输出预算和采样温度"""
+        mock_response = {
+            "choices": [{"message": {"content": "ok"}}]
+        }
+        httpx_mock.add_response(
+            url=f"{settings.siliconflow_base_url}/chat/completions",
+            method="POST",
+            json=mock_response,
+            status_code=200,
+        )
+
+        await call_siliconflow(
+            [{"role": "user", "content": "hi"}],
+            stream=False,
+            max_tokens=768,
+            temperature=0.35,
+        )
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["max_tokens"] == 768
+        assert body["temperature"] == 0.35
+
     async def test_api_error_raises_exception(self, httpx_mock):
         """API 返回错误时抛出异常"""
         httpx_mock.add_response(

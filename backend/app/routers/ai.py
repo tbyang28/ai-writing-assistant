@@ -19,6 +19,7 @@ from app.schemas.ai import (
 from app.services.ai_service import (
     call_siliconflow, build_messages, build_text_diff,
     summarize_diff, parse_character_extraction,
+    estimate_polish_diff_max_tokens,
 )
 from app.services.rag_service import build_rag_context
 
@@ -56,6 +57,9 @@ async def _get_recent_book_chapters(
     current_chapter: Chapter | None = None,
     limit: int = 3,
 ) -> list[Chapter]:
+    if limit <= 0:
+        return []
+
     query = select(Chapter).where(Chapter.book_id == book_id)
     if current_chapter:
         query = query.where(Chapter.order < current_chapter.order)
@@ -76,16 +80,28 @@ async def _build_story_memory(
     query: str,
     chapter_id: str | None = None,
     current_content: str | None = None,
+    *,
+    previous_chapter_limit: int = 3,
+    previous_chapter_chars: int = 1600,
+    character_limit: int = 12,
+    outline_limit: int = 8,
+    current_chars: int = 3000,
+    include_rag: bool = True,
 ) -> str:
     """Build a compact same-book memory block for AI calls."""
     current_chapter = await _get_current_chapter(chapter_id, db)
-    previous_chapters = await _get_recent_book_chapters(book.id, db, current_chapter)
+    previous_chapters = await _get_recent_book_chapters(
+        book.id,
+        db,
+        current_chapter,
+        previous_chapter_limit,
+    )
 
     character_result = await db.execute(
         select(Character)
         .where(Character.book_id == book.id)
         .order_by(Character.created_at.asc())
-        .limit(12)
+        .limit(character_limit)
     )
     characters = list(character_result.scalars().all())
 
@@ -93,12 +109,12 @@ async def _build_story_memory(
         select(Outline)
         .where(Outline.book_id == book.id)
         .order_by(Outline.order.asc())
-        .limit(8)
+        .limit(outline_limit)
     )
     outlines = list(outline_result.scalars().all())
 
     rag_context = ""
-    if query.strip():
+    if include_rag and query.strip():
         try:
             rag_context = await build_rag_context(db, query[:1000], book.id)
         except Exception:
@@ -132,7 +148,7 @@ async def _build_story_memory(
             text = (chapter.content or "").strip()
             if not text:
                 continue
-            tail = text[-1600:] if len(text) > 1600 else text
+            tail = text[-previous_chapter_chars:] if len(text) > previous_chapter_chars else text
             history_parts.append(f"【{chapter.title}】\n{tail}")
         if history_parts:
             parts.append("【最近前文章节】\n" + "\n\n".join(history_parts))
@@ -141,8 +157,8 @@ async def _build_story_memory(
         parts.append(rag_context)
 
     current = (current_content or "").strip()
-    if current:
-        parts.append("【当前章节草稿】\n" + current[:3000])
+    if current and current_chars > 0:
+        parts.append("【当前章节草稿】\n" + current[:current_chars])
 
     parts.append("【使用要求】回答必须严格承接同一本书的前文、人物关系和当前章节，不要凭空换主角、换世界观或重开剧情。")
     return "\n\n".join(parts)
@@ -163,6 +179,69 @@ def _build_continue_prompt(content: str, story_memory: str) -> str:
         "如果当前章节为空，就从上一章之后自然接下一章开头。不要总结，不要写大纲，不要解释。\n\n"
         f"【当前续写位置】\n{current_block}"
     )
+
+
+async def _prepare_polish_diff_call(
+    db: AsyncSession,
+    book: Book,
+    data: AiPolishDiffRequest,
+) -> dict:
+    original = (data.selected_text or data.content or "").strip()
+    if not original:
+        raise HTTPException(status_code=400, detail="需要提供待润色文本")
+
+    original_for_ai = original[:3000]
+    original_tail = original[3000:]
+    instruction = (data.instruction or "在保留原意和剧情的基础上，让文字更自然、更有画面感。").strip()
+    story_memory = await _build_story_memory(
+        db,
+        book,
+        original_for_ai,
+        data.chapter_id,
+        data.content,
+        previous_chapter_limit=1,
+        previous_chapter_chars=600,
+        character_limit=8,
+        outline_limit=4,
+        current_chars=800 if data.selected_text else 0,
+        include_rag=False,
+    )
+    user_msg = (
+        f"{story_memory}\n\n"
+        "【AI 修改审阅任务】\n"
+        "请根据用户要求修改待处理文本，只修改必要之处。只输出修改后的正文，不要解释、不要标题、不要列修改点。\n"
+        "必须保留原文核心情节、人物关系、叙事视角和上下文一致性；不要新增与作品记忆冲突的设定。\n\n"
+        f"【用户修改要求】\n{instruction}\n\n"
+        f"【待处理文本】\n{original_for_ai}"
+    )
+
+    return {
+        "messages": build_messages("polish_diff", user_msg),
+        "instruction": instruction,
+        "original_for_ai": original_for_ai,
+        "original_tail": original_tail,
+        "original_length": len(original),
+        "processed_length": len(original_for_ai),
+        "max_tokens": estimate_polish_diff_max_tokens(original_for_ai),
+    }
+
+
+def _build_polish_diff_response(call_data: dict, revised_for_ai: str) -> dict:
+    revised_for_ai = revised_for_ai.strip()
+    revised = revised_for_ai + call_data["original_tail"]
+    segments = build_text_diff(call_data["original_for_ai"], revised_for_ai)
+
+    return {
+        "original": call_data["original_for_ai"],
+        "revised": revised,
+        "segments": segments,
+        "summary": summarize_diff(segments),
+        "instruction": call_data["instruction"],
+        "truncated": bool(call_data["original_tail"]),
+        "original_length": call_data["original_length"],
+        "processed_length": call_data["processed_length"],
+    }
+
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -349,51 +428,84 @@ async def ai_polish_diff(
 ):
     """AI 润色并返回可审阅的 diff 对比。"""
     book = await verify_book_access(data.book_id, current_user.id, db)
-
-    original = (data.selected_text or data.content or "").strip()
-    if not original:
+    if not (data.selected_text or data.content or "").strip():
         raise HTTPException(status_code=400, detail="需要提供待润色文本")
 
     try:
-        original_for_ai = original[:3000]
-        original_tail = original[3000:]
-        instruction = (data.instruction or "在保留原意和剧情的基础上，让文字更自然、更有画面感。").strip()
-        story_memory = await _build_story_memory(
-            db,
-            book,
-            original_for_ai,
-            data.chapter_id,
-            data.content,
+        call_data = await _prepare_polish_diff_call(db, book, data)
+        result = await call_siliconflow(
+            call_data["messages"],
+            stream=False,
+            model=data.model,
+            max_tokens=call_data["max_tokens"],
+            temperature=0.35,
         )
-        user_msg = (
-            f"{story_memory}\n\n"
-            "【AI 修改审阅任务】\n"
-            "请根据用户要求修改待处理文本，只修改必要之处。只输出修改后的正文，不要解释、不要标题、不要列修改点。\n"
-            "必须保留原文核心情节、人物关系、叙事视角和上下文一致性；不要新增与作品记忆冲突的设定。\n\n"
-            f"【用户修改要求】\n{instruction}\n\n"
-            f"【待处理文本】\n{original_for_ai}"
-        )
-        messages = build_messages("polish_diff", user_msg)
-        result = await call_siliconflow(messages, stream=False, model=data.model)
-        revised_for_ai = (result.get("answer") or "").strip()
-        revised = revised_for_ai + original_tail
-        segments = build_text_diff(original_for_ai, revised_for_ai)
 
         return {
-            "data": {
-                "original": original_for_ai,
-                "revised": revised,
-                "segments": segments,
-                "summary": summarize_diff(segments),
-                "instruction": instruction,
-                "truncated": bool(original_tail),
-                "original_length": len(original),
-                "processed_length": len(original_for_ai),
-            }
+            "data": _build_polish_diff_response(
+                call_data,
+                result.get("answer") or "",
+            )
         }
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=_extract_ai_error(e))
+
+
+@router.post("/polish-diff/stream")
+async def ai_polish_diff_stream(
+    data: AiPolishDiffRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI 润色流式返回正文 token，完成后返回 diff 审阅结果。"""
+    book = await verify_book_access(data.book_id, current_user.id, db)
+    if not (data.selected_text or data.content or "").strip():
+        raise HTTPException(status_code=400, detail="需要提供待润色文本")
+
+    async def generate():
+        try:
+            call_data = await _prepare_polish_diff_call(db, book, data)
+            meta = {
+                "original": call_data["original_for_ai"],
+                "instruction": call_data["instruction"],
+                "truncated": bool(call_data["original_tail"]),
+                "original_length": call_data["original_length"],
+                "processed_length": call_data["processed_length"],
+            }
+            yield f"data: {json.dumps({'type': 'meta', 'data': meta})}\n\n"
+
+            revised_chunks: list[str] = []
+            async for chunk in await call_siliconflow(
+                call_data["messages"],
+                stream=True,
+                model=data.model,
+                max_tokens=call_data["max_tokens"],
+                temperature=0.35,
+            ):
+                revised_chunks.append(chunk)
+                yield f"data: {json.dumps({'type': 'token', 'data': {'text': chunk}})}\n\n"
+
+            payload = _build_polish_diff_response(call_data, "".join(revised_chunks))
+            yield f"data: {json.dumps({'type': 'result', 'data': payload})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'data': {}})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': _extract_ai_error(e)}})}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/extract-characters")

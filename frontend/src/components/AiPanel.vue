@@ -32,6 +32,7 @@ const diffInstructionRef = ref<HTMLTextAreaElement | null>(null)
 const isDiffLoading = ref(false)
 const showDiffControls = ref(false)
 const showSideBySide = ref(false)
+const streamingDiffText = ref('')
 
 const diffTargetReady = computed(() => Boolean(props.selectedText || props.chapterContent))
 const diffTargetLabel = computed(() => (
@@ -123,15 +124,20 @@ async function runPolishDiff() {
   showDiffControls.value = true
   showSideBySide.value = false
   polishDiffResult.value = null
+  streamingDiffText.value = ''
   isDiffLoading.value = true
   try {
-    polishDiffResult.value = await aiStore.polishDiff(
+    polishDiffResult.value = await aiStore.polishDiffStream(
       props.bookId,
       props.chapterContent || '',
       props.selectedText || undefined,
       props.chapterId,
       diffInstruction.value,
+      (_chunk, fullText) => {
+        streamingDiffText.value = fullText
+      },
     )
+    streamingDiffText.value = ''
   } finally {
     isDiffLoading.value = false
   }
@@ -145,12 +151,14 @@ function acceptPolishDiff() {
   if (!polishDiffResult.value?.revised) return
   emit('replaceText', polishDiffResult.value.revised)
   polishDiffResult.value = null
+  streamingDiffText.value = ''
   showDiffControls.value = false
   showSideBySide.value = false
 }
 
 function rejectPolishDiff() {
   polishDiffResult.value = null
+  streamingDiffText.value = ''
   showDiffControls.value = false
   showSideBySide.value = false
 }
@@ -263,7 +271,7 @@ function handleStreamSend() {
           </div>
           <button @click="runPolishDiff" :disabled="isDiffLoading || aiStore.isLoading || !diffTargetReady"
             class="btn-primary text-xs px-2.5 py-1.5 disabled:opacity-50 shrink-0">
-            {{ isDiffLoading ? '生成中...' : polishDiffResult ? '重新生成' : '生成审阅' }}
+            {{ isDiffLoading ? '流式生成中...' : polishDiffResult ? '重新生成' : '生成审阅' }}
           </button>
         </div>
         <textarea
@@ -298,9 +306,15 @@ function handleStreamSend() {
         :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
         <div class="flex items-center gap-2 text-sm" :style="{ color: 'var(--text-secondary)' }">
           <div class="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-          正在生成 AI 修改审阅...
+          正在流式生成 AI 润色...
         </div>
-        <div class="text-xs mt-1 pl-6" :style="{ color: 'var(--text-muted)' }">非流式润色，稍等片刻</div>
+        <div class="text-xs mt-1 pl-6" :style="{ color: 'var(--text-muted)' }">
+          {{ streamingDiffText ? `已生成 ${streamingDiffText.length} 字，完成后自动生成 diff` : '等待模型开始返回内容' }}
+        </div>
+        <div v-if="streamingDiffText" class="mt-3 text-sm leading-relaxed whitespace-pre-wrap rounded p-2 max-h-48 overflow-y-auto font-serif"
+          :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">
+          {{ streamingDiffText }}
+        </div>
       </div>
 
       <div v-if="polishDiffResult" class="rounded-lg border p-3 space-y-3"

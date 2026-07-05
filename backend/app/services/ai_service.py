@@ -193,6 +193,11 @@ def summarize_diff(segments: list[dict[str, str]], limit: int = 6, excerpt_len: 
     return summaries
 
 
+def estimate_polish_diff_max_tokens(text: str) -> int:
+    """Estimate a tighter output budget for polishing near-same-length prose."""
+    return max(512, min(4096, int(len(text) * 1.4) + 384))
+
+
 def parse_character_extraction(raw_text: str) -> list[dict]:
     """Parse and normalize LLM character extraction JSON."""
     text = raw_text.strip()
@@ -230,6 +235,8 @@ async def call_siliconflow(
     messages: list[dict],
     stream: bool = False,
     model: str | None = None,
+    max_tokens: int = 4096,
+    temperature: float = 0.7,
 ) -> dict | AsyncGenerator[str, None]:
     """调用 SiliconFlow API
 
@@ -237,6 +244,8 @@ async def call_siliconflow(
         messages: 消息列表
         stream: 是否流式输出
         model: 模型 ID，为 None 时使用 settings.deepseek_model
+        max_tokens: 最大输出 token 数
+        temperature: 采样温度
     """
     if not settings.siliconflow_api_key:
         raise RuntimeError("Render 后端未配置 SILICONFLOW_API_KEY，无法调用 AI 服务")
@@ -249,8 +258,8 @@ async def call_siliconflow(
         "model": model or settings.deepseek_model,
         "messages": messages,
         "stream": stream,
-        "max_tokens": 4096,
-        "temperature": 0.7,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
     }
 
     if stream:

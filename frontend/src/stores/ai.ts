@@ -354,6 +354,94 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  async function polishDiffStream(
+    bookId: string,
+    content: string,
+    selectedText?: string,
+    chapterId?: string,
+    instruction?: string,
+    onToken?: (text: string, fullText: string) => void,
+    onMeta?: (meta: Partial<PolishDiffResult>) => void,
+  ) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(streamUrl('/ai/polish-diff/stream'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          book_id: bookId,
+          content,
+          chapter_id: chapterId,
+          selected_text: selectedText,
+          instruction: instruction?.trim() || undefined,
+          model: selectedModel.value || undefined,
+        }),
+      })
+
+      if (!response.ok) throw new Error(await parseErrorResponse(response))
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No reader available')
+
+      const decoder = new TextDecoder()
+      let fullText = ''
+      let buffer = ''
+      let finalResult: PolishDiffResult | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const dataStr = trimmed.slice(6)
+          if (dataStr === '[DONE]') continue
+
+          let parsed: any
+          try {
+            parsed = JSON.parse(dataStr)
+          } catch {
+            continue
+          }
+
+          if (parsed.type === 'meta') {
+            onMeta?.(parsed.data || {})
+          } else if (parsed.type === 'token') {
+            const text = parsed.data?.text || ''
+            fullText += text
+            onToken?.(text, fullText)
+          } else if (parsed.type === 'result') {
+            finalResult = parsed.data as PolishDiffResult
+          } else if (parsed.type === 'error') {
+            throw new Error(parsed.data?.message || 'AI Diff 流式润色失败')
+          }
+        }
+      }
+
+      if (!finalResult) {
+        throw new Error('AI Diff 流式响应未返回审阅结果')
+      }
+
+      lastResponse.value = finalResult
+      return finalResult
+    } catch (err: any) {
+      error.value = err.message || 'AI Diff 流式润色失败'
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function extractCharacters(bookId: string, content: string, chapterId?: string) {
     isLoading.value = true
     error.value = null
@@ -379,6 +467,6 @@ export const useAiStore = defineStore('ai', () => {
     isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages, selectedModel,
     setSelectedText, openPanel, closePanel, togglePanel, addMessage, clearChat,
     loadChatHistory, persistChatHistory, replaceLastAssistantContent, appendToLastAssistant,
-    sendMessage, streamChat, write, streamWrite, polishDiff, extractCharacters,
+    sendMessage, streamChat, write, streamWrite, polishDiff, polishDiffStream, extractCharacters,
   }
 })
