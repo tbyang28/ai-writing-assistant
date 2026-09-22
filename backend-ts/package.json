@@ -1,0 +1,47 @@
+{
+  "name": "ai-writing-backend-ts",
+  "version": "1.0.0",
+  "description": "AI Writing Platform Backend (NestJS + Drizzle + PostgreSQL)",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "bcryptjs": "^3.0.2",
+    "diff": "^9.0.0",
+    "drizzle-orm": "^0.44.0",
+    "jose": "^6.0.0",
+    "pg": "^8.16.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "undici": "^7.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.0",
+    "@swc/core": "^1.16.2",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^6.0.0",
+    "drizzle-kit": "^0.31.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "unplugin-swc": "^1.6.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -1,0 +1,9 @@
+# 构建产物
+dist/
+
+# 本地环境变量（仓库里只提交 .env.example）
+.env
+.env.local
+
+# 测试产物
+coverage/
