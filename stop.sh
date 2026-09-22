@@ -31,6 +31,13 @@ else
     echo "ℹ️  前端服务未运行"
 fi
 
+# 停止本脚本启动的开发数据库容器；不会删除数据卷
+if command -v docker >/dev/null 2>&1; then
+    echo "⏹️  停止 PostgreSQL + pgvector"
+    docker compose stop postgres >/dev/null 2>&1 || true
+    echo "✅ PostgreSQL 已停止（数据卷保留）"
+fi
+
 echo ""
 echo "================================================"
 echo "         所有服务已停止！"

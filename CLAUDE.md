@@ -57,7 +57,7 @@
 | AI 模型 | DeepSeek-V3.2 / GLM-4 / MiniMax（SiliconFlow） | - |
 | 向量模型 | BAAI/bge-large-zh-v1.5 | - |
 | 部署 | Docker + Docker Compose | - |
-| 测试 | Vitest + supertest（**172 个用例**） | ^3.2 |
+| 测试 | Vitest + supertest（**174 个用例**） | ^3.2 |
 
 > 旧版 Python 技术栈：FastAPI ^0.104 + SQLAlchemy ^2.0 + SQLite（`backend/`，保留参考）。
 
@@ -123,7 +123,7 @@ ai-writing-assistant/
 │   │   │   │                   #   text-diff、extraction、llm/（undici SiliconFlow 客户端）
 │   │   ├── rag/                # RAG：切块/余弦/pgvector 索引与检索
 │   │   └── shared/             # chinese-number、text（码点级 wordCount/切片）
-│   ├── test/                   # 172 个 Vitest 用例（单测 + supertest e2e + 真socket SSE 解析）
+│   ├── test/                   # 174 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
 │   ├── tools/import-sqlite.ts  # 旧 SQLite 数据 → PostgreSQL 一次性迁移
 │   ├── drizzle.config.ts / Dockerfile / vitest.config.ts
 ├── backend/                    # 📚 Python/FastAPI 旧实现（参考答案，冻结不动）
@@ -200,7 +200,7 @@ ai-writing-assistant/
 ```bash
 cd backend-ts
 docker compose up -d postgres-test   # 测试库（localhost:5434）
-npm test                             # Vitest：16 个文件 / 172 个用例
+npm test                             # Vitest：17 个文件 / 174 个用例
 npx tsc --noEmit                     # 类型检查
 ```
 
@@ -276,7 +276,7 @@ RUN_MIGRATIONS=true                 # 启动时自动跑迁移（compose/render 
 | **跨后端兼容** | 同 SECRET_KEY 下新旧 token 互认；Python $2b$ 哈希在 TS 侧可直接验证 |
 | **安全修复** | 补 3 处越权写洞（outline/character/inspiration 创建）；FK 真级联（删章不再孤儿化向量块） |
 | **性能修复** | stats 由 N+1 重写为 2-3 条聚合查询；nginx 剥前缀 bug 修复 |
-| **单元测试** | 172 个用例（Python 版 111 → 净增 61，覆盖越权/级联/解析器/契约对齐） |
+| **单元测试** | 174 个用例（Python 版 111 → 净增 63，覆盖越权/级联/解析器/契约对齐/SSE 取消） |
 
 ---
 

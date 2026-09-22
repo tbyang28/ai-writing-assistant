@@ -4,7 +4,8 @@ services:
       context: ./backend
     container_name: ai-writing-backend
     environment:
-      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////app/data/writing_platform.db}
+      # 旧 Python 参考服务专用；主后端使用下方 PostgreSQL DATABASE_URL。
+      DATABASE_URL: ${PYTHON_DATABASE_URL:-sqlite+aiosqlite:////app/data/writing_platform.db}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
@@ -24,7 +25,7 @@ services:
     container_name: ai-writing-backend-ts
     environment:
       PORT: 8001
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/ai_writing
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/ai_writing}
       RUN_MIGRATIONS: "true"
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       ALGORITHM: ${ALGORITHM:-HS256}
