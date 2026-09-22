@@ -4,7 +4,8 @@ import { and, asc, desc, eq, lt } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/drizzle.module';
 import { chapters, characters, outlines, type Book, type Chapter } from '../db/schema';
 import { RagService } from '../rag/rag.service';
-import { codePointSlice } from '../shared/text';
+import { isUuid } from '../shared/is-uuid';
+import { codePointLength, codePointSlice } from '../shared/text';
 
 /** story memory 的可调参数（polish 变体会整体覆盖一组更紧的值） */
 export interface StoryMemoryOptions {
@@ -115,7 +116,7 @@ export class StoryMemoryService {
           continue;
         }
         const tail =
-          codePointLengthOf(text) > opts.previousChapterChars
+          codePointLength(text) > opts.previousChapterChars
             ? codePointSlice(text, -opts.previousChapterChars)
             : text;
         historyParts.push(`【${chapter.title}】\n${tail}`);
@@ -174,12 +175,4 @@ export class StoryMemoryService {
       .limit(limit);
     return rows.reverse();
   }
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-}
-
-function codePointLengthOf(text: string): number {
-  return Array.from(text).length;
 }

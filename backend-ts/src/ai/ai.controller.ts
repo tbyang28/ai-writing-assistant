@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { once } from 'node:events';
 import { and, eq } from 'drizzle-orm';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -19,9 +20,10 @@ import { ZodValidationPipe } from '../core/zod-validation.pipe';
 import { DRIZZLE, type Database } from '../db/drizzle.module';
 import { books, type Book, type User } from '../db/schema';
 import { codePointLength, codePointSlice } from '../shared/text';
+import { isUuid } from '../shared/is-uuid';
 import { parseCharacterExtraction } from './extraction';
 import { extractAiError } from './extract-error';
-import { LLM_CLIENT, type LlmClient } from './llm/llm-client.interface';
+import { LLM_CLIENT, type LlmClient, type LlmCallOptions } from './llm/llm-client.interface';
 import {
   buildContinuePrompt,
   buildContextualChatPrompt,
@@ -202,7 +204,7 @@ export class AiController {
     @Res() res: Response,
   ) {
     const book = await this.verifyBookAccess(data.book_id, user.id);
-    this.startSse(res);
+    const abort = this.startSse(res);
     try {
       const memoryQuery = data.current_content || data.message;
       const storyMemory = await this.memory.buildStoryMemory(
@@ -212,14 +214,14 @@ export class AiController {
         data.current_content ?? null,
       );
       const userMsg = buildContextualChatPrompt(data.message, storyMemory);
-      const messages = buildMessages('chat', userMsg, data.history ?? undefined);
-
-      for await (const chunk of this.llm.chatStream({ messages, model: data.model ?? undefined })) {
-        this.writeToken(res, chunk);
-      }
+      await this.pipeTokens(res, {
+        messages: buildMessages('chat', userMsg, data.history ?? undefined),
+        model: data.model ?? undefined,
+        signal: abort.signal,
+      });
       this.finishSse(res);
     } catch (e) {
-      this.errorSse(res, e);
+      this.writeErrorSafely(res, abort, e);
     }
     res.end();
   }
@@ -231,17 +233,17 @@ export class AiController {
     @Res() res: Response,
   ) {
     const book = await this.verifyBookAccess(data.book_id, user.id);
-    this.startSse(res);
+    const abort = this.startSse(res);
     try {
       const userMsg = await this.buildWritePrompt(data, book);
-      const messages = buildMessages(data.command, userMsg);
-
-      for await (const chunk of this.llm.chatStream({ messages, model: data.model ?? undefined })) {
-        this.writeToken(res, chunk);
-      }
+      await this.pipeTokens(res, {
+        messages: buildMessages(data.command, userMsg),
+        model: data.model ?? undefined,
+        signal: abort.signal,
+      });
       this.finishSse(res);
     } catch (e) {
-      this.errorSse(res, e);
+      this.writeErrorSafely(res, abort, e);
     }
     res.end();
   }
@@ -256,7 +258,7 @@ export class AiController {
     if (!(data.selected_text || data.content || '').trim()) {
       throw new BadRequestException('需要提供待润色文本');
     }
-    this.startSse(res);
+    const abort = this.startSse(res);
     try {
       const call = await this.preparePolishDiffCall(data, book);
       this.writeSse(res, {
@@ -271,15 +273,17 @@ export class AiController {
       });
 
       const revisedChunks: string[] = [];
-      for await (const chunk of this.llm.chatStream({
-        messages: call.messages,
-        model: data.model ?? undefined,
-        maxTokens: call.maxTokens,
-        temperature: 0.35,
-      })) {
-        revisedChunks.push(chunk);
-        this.writeToken(res, chunk);
-      }
+      await this.pipeTokens(
+        res,
+        {
+          messages: call.messages,
+          model: data.model ?? undefined,
+          maxTokens: call.maxTokens,
+          temperature: 0.35,
+          signal: abort.signal,
+        },
+        (chunk) => revisedChunks.push(chunk),
+      );
 
       this.writeSse(res, {
         type: 'result',
@@ -287,7 +291,7 @@ export class AiController {
       });
       this.finishSse(res);
     } catch (e) {
-      this.errorSse(res, e);
+      this.writeErrorSafely(res, abort, e);
     }
     res.end();
   }
@@ -397,21 +401,51 @@ export class AiController {
 
   // ===================== SSE 基础设施 =====================
 
-  private startSse(res: Response): void {
+  /**
+   * 开流并返回取消控制器：客户端断开（关页面/取消请求）时 abort，
+   * 上游 LLM 调用随之取消，不再白烧 token。
+   * （正常 finishSse 后触发的 close 是无害的空操作。）
+   */
+  private startSse(res: Response): AbortController {
+    const abort = new AbortController();
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+    res.on('close', () => abort.abort());
+    return abort;
   }
 
   private writeSse(res: Response, payload: unknown): void {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   }
 
-  private writeToken(res: Response, text: string): void {
-    this.writeSse(res, { type: 'token', data: { text } });
+  /** token 帧写入：写缓冲满时等排空（背压），与 close 竞速避免客户端断开后悬挂 */
+  private async writeToken(res: Response, text: string): Promise<void> {
+    if (res.write(`data: ${JSON.stringify({ type: 'token', data: { text } })}\n\n`)) {
+      return;
+    }
+    if (res.destroyed || res.writableEnded) {
+      return;
+    }
+    await Promise.race([once(res, 'drain'), once(res, 'close')]);
+  }
+
+  /** 三个流式端点共用的 token 循环（onToken 供 polish-diff 收集改文） */
+  private async pipeTokens(
+    res: Response,
+    options: LlmCallOptions,
+    onToken?: (text: string) => void,
+  ): Promise<void> {
+    for await (const chunk of this.llm.chatStream(options)) {
+      if (options.signal?.aborted) {
+        return; // 客户端已断开：停止消费，for-await 提前退出会触发上游 dump
+      }
+      onToken?.(chunk);
+      await this.writeToken(res, chunk);
+    }
   }
 
   private finishSse(res: Response): void {
@@ -419,7 +453,11 @@ export class AiController {
     res.write('data: [DONE]\n\n');
   }
 
-  private errorSse(res: Response, e: unknown): void {
+  /** 出错时写 in-band error 帧；客户端已断开就没必要也没法再写 */
+  private writeErrorSafely(res: Response, abort: AbortController, e: unknown): void {
+    if (abort.signal.aborted || res.destroyed || res.writableEnded) {
+      return;
+    }
     this.writeSse(res, { type: 'error', data: { message: extractAiError(e) } });
     res.write('data: [DONE]\n\n');
   }
@@ -438,8 +476,4 @@ function internalAiError(e: unknown): HttpException {
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }

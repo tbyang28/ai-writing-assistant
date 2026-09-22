@@ -13,6 +13,8 @@ export interface LlmCallOptions {
   maxTokens?: number;
   /** 默认 0.7 */
   temperature?: number;
+  /** 取消信号：SSE 客户端断开时中止上游请求，不再白烧 token */
+  signal?: AbortSignal;
 }
 
 export interface LlmResult {

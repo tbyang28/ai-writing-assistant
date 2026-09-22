@@ -64,7 +64,7 @@ export class SiliconFlowClient implements LlmClient, OnModuleDestroy {
     });
   }
 
-  private post(path: string, body: string): Promise<UndiciResponse> {
+  private post(path: string, body: string, signal?: AbortSignal): Promise<UndiciResponse> {
     return request(`${this.baseUrl()}${path}`, {
       method: 'POST',
       headers: {
@@ -73,6 +73,7 @@ export class SiliconFlowClient implements LlmClient, OnModuleDestroy {
       },
       body,
       dispatcher: this.agent,
+      signal,
     });
   }
 
@@ -90,9 +91,12 @@ export class SiliconFlowClient implements LlmClient, OnModuleDestroy {
 
   async chat(options: LlmCallOptions): Promise<LlmResult> {
     const body = this.buildBody(options, false);
-    // 网络层错误重试 2 次（HTTP 状态错误不重试）
+    // 网络层错误重试 2 次（HTTP 状态错误不重试）；已取消的调用不再重试
     return this.withRetry(async () => {
-      const res = await this.post('/chat/completions', body);
+      if (options.signal?.aborted) {
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }
+      const res = await this.post('/chat/completions', body, options.signal);
       if (res.statusCode >= 400) {
         throw await SiliconFlowClient.httpError(res);
       }
@@ -104,7 +108,7 @@ export class SiliconFlowClient implements LlmClient, OnModuleDestroy {
   }
 
   async *chatStream(options: LlmCallOptions): AsyncIterable<string> {
-    const res = await this.post('/chat/completions', this.buildBody(options, true));
+    const res = await this.post('/chat/completions', this.buildBody(options, true), options.signal);
     if (res.statusCode >= 400) {
       throw await SiliconFlowClient.httpError(res);
     }

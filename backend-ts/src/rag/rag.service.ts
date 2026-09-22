@@ -4,7 +4,6 @@ import { and, cosineDistance, eq, isNotNull } from 'drizzle-orm';
 import { LLM_CLIENT, type LlmClient } from '../ai/llm/llm-client.interface';
 import { DRIZZLE, type Database } from '../db/drizzle.module';
 import { documentChunks } from '../db/schema';
-import { codePointSlice } from '../shared/text';
 
 /** 每段文本切多大（字符数）—— Python 版常量一致 */
 export const CHUNK_SIZE = 500;
@@ -30,12 +29,17 @@ export class RagService {
   /**
    * 把长文本切成短段，段间重叠 —— Python 版逐码点切片：
    * chunks.append(text[start:end]); start += CHUNK_SIZE - CHUNK_OVERLAP
+   *
+   * 性能：只做一次 Array.from 全文展开，循环里对数组切片。
+   * 若每个块都走 codePointSlice(全文)，是 O(块数 × 全长) 的平方开销
+   * （10 万字章节 ≈ 250 块 × 10 万码点），Python 的 text[start:end] 没有这个问题。
    */
   splitIntoChunks(text: string): string[] {
+    const chars = Array.from(text);
     const chunks: string[] = [];
     let start = 0;
-    while (start < codePointLengthOf(text)) {
-      chunks.push(codePointSlice(text, start, start + CHUNK_SIZE));
+    while (start < chars.length) {
+      chunks.push(chars.slice(start, start + CHUNK_SIZE).join(''));
       start += CHUNK_SIZE - CHUNK_OVERLAP;
     }
     return chunks.length > 0 ? chunks : [text];
@@ -57,31 +61,40 @@ export class RagService {
   }
 
   /**
-   * 章节索引：删旧块 → 切段 → 逐块向量化入库。
-   * 单块向量化失败只跳过该块，不阻塞章节保存（Python 行为）。
+   * 章节索引：切段 → 逐块向量化（失败跳过）→ 事务内删旧插新。
+   *
+   * 结构取舍：embedding 是外部 HTTP 调用，放在事务外逐块做
+   * （避免长时间占用连接池）；delete + 批量 insert 包成一个事务，
+   * 中途失败整体回滚，不会留下「旧块删了一半、新块插了一半」的中间态。
    */
   async indexChapter(chapterId: string, content: string, bookId: string): Promise<void> {
-    await this.db.delete(documentChunks).where(eq(documentChunks.chapterId, chapterId));
-
-    const chunks = this.splitIntoChunks(content);
-    for (const [i, chunkText] of chunks.entries()) {
+    const ready: Array<{ order: number; text: string; vec: number[] }> = [];
+    for (const [i, chunkText] of this.splitIntoChunks(content).entries()) {
       if (!chunkText.trim()) {
-        continue;
+        continue; // Python：空白块跳过
       }
-      let vec: number[];
       try {
-        vec = (await this.llm.embed([chunkText]))[0];
+        const vec = (await this.llm.embed([chunkText]))[0];
+        ready.push({ order: i, text: chunkText, vec });
       } catch {
-        continue;
+        continue; // 向量化失败不阻塞章节保存（Python 行为）
       }
-      await this.db.insert(documentChunks).values({
-        bookId,
-        chapterId,
-        content: chunkText,
-        chunkOrder: i,
-        embedding: vec, // vector 列的 mapToDriverValue 会转成 '[1,2,...]' 字面量
-      });
     }
+
+    await this.db.transaction(async (tx) => {
+      await tx.delete(documentChunks).where(eq(documentChunks.chapterId, chapterId));
+      if (ready.length > 0) {
+        await tx.insert(documentChunks).values(
+          ready.map(({ order, text, vec }) => ({
+            bookId,
+            chapterId,
+            content: text,
+            chunkOrder: order,
+            embedding: vec, // vector 列的 mapToDriverValue 会转成 '[1,2,...]' 字面量
+          })),
+        );
+      }
+    });
   }
 
   /** 语义搜索：query 向量化后按余弦距离在库内取 top-k */
@@ -119,8 +132,4 @@ export class RagService {
 
 function round4(value: number): number {
   return Math.round(value * 10000) / 10000;
-}
-
-function codePointLengthOf(text: string): number {
-  return Array.from(text).length;
 }

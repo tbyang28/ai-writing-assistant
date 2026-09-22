@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, type PipeTransform } from '@nestjs/common';
 
+import { isUuid } from '../shared/is-uuid';
+
 /**
  * 路径参数 UUID 校验 —— 行为对齐 Python：
  * FastAPI 的 book_id 是裸 str，非 UUID 串查不到行 → 404 作品不存在。
@@ -11,10 +13,7 @@ export class ParseUuidOr404Pipe implements PipeTransform<string, string> {
   constructor(private readonly notFoundMessage: string) {}
 
   transform(value: string): string {
-    if (
-      typeof value !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-    ) {
+    if (typeof value !== 'string' || !isUuid(value)) {
       throw new NotFoundException(this.notFoundMessage);
     }
     return value;
