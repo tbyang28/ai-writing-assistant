@@ -193,12 +193,17 @@ function handleStreamSend() {
   <div class="flex flex-col h-full overflow-hidden shrink-0 border-l"
     :style="{ backgroundColor: 'var(--surface)', borderLeftColor: 'var(--border-clr)' }">
     <!-- Header -->
-    <div class="h-12 flex items-center justify-between gap-2 px-3 border-b"
+    <div class="flex items-center justify-between gap-2 px-4 py-2.5 border-b"
       :style="{ borderBottomColor: 'var(--border-clr)' }">
-      <div class="flex items-center gap-1.5 min-w-0">
-        <span class="font-medium text-sm shrink-0" :style="{ color: 'var(--text-primary)' }">AI 助手</span>
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-brand text-white">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v3m0 12v3M5.6 5.6l2.2 2.2m8.4 8.4 2.2 2.2M3 12h3m12 0h3M5.6 18.4l2.2-2.2m8.4-8.4 2.2-2.2"/>
+          </svg>
+        </div>
+        <span class="font-serif font-semibold text-sm shrink-0" :style="{ color: 'var(--text-primary)' }">AI 助手</span>
         <select v-model="aiStore.selectedModel"
-          class="text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand/40 max-w-[130px] truncate appearance-none cursor-pointer"
+          class="text-[11px] border rounded-lg px-2 py-1 focus:outline-none max-w-[124px] truncate appearance-none cursor-pointer transition-colors duration-150"
           :style="{
             backgroundColor: 'var(--surface-secondary)',
             borderColor: 'var(--border-clr)',
@@ -210,8 +215,10 @@ function handleStreamSend() {
           </option>
         </select>
       </div>
-      <button @click="aiStore.closePanel()" class="shrink-0 rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-700"
-        :style="{ color: 'var(--text-muted)' }">
+      <button @click="aiStore.closePanel()"
+        class="shrink-0 rounded-lg p-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]"
+        :style="{ color: 'var(--text-muted)' }"
+        aria-label="关闭 AI 助手">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
@@ -219,58 +226,33 @@ function handleStreamSend() {
     </div>
 
     <!-- Quick Actions -->
-    <div class="px-3 py-3 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
-      <div class="text-xs mb-2" :style="{ color: 'var(--text-muted)' }">快捷操作</div>
-      <div class="flex flex-wrap gap-2">
-        <button @click="runCommand('continue')" :disabled="aiStore.isLoading"
-          class="px-2.5 py-1.5 text-xs rounded-lg font-medium disabled:opacity-50 transition-colors
-            bg-indigo-50 text-indigo-600 hover:bg-indigo-100
-            dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50">
-          续写
-        </button>
-        <button @click="runCommand('improve')" :disabled="aiStore.isLoading"
-          class="px-2.5 py-1.5 text-xs rounded-lg font-medium disabled:opacity-50 transition-colors
-            bg-green-50 text-green-600 hover:bg-green-100
-            dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50">
-          润色
-        </button>
-        <button @click="openDiffReview" :disabled="aiStore.isLoading || !diffTargetReady"
-          class="px-2.5 py-1.5 text-xs rounded-lg font-medium disabled:opacity-50 transition-colors
-            bg-emerald-50 text-emerald-700 hover:bg-emerald-100
-            dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50">
-          Diff 润色
-        </button>
-        <button @click="runCommand('fix')" :disabled="aiStore.isLoading"
-          class="px-2.5 py-1.5 text-xs rounded-lg font-medium disabled:opacity-50 transition-colors
-            bg-orange-50 text-orange-600 hover:bg-orange-100
-            dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50">
-          校对
-        </button>
-        <button @click="runCommand('summarize')" :disabled="aiStore.isLoading"
-          class="px-2.5 py-1.5 text-xs rounded-lg font-medium disabled:opacity-50 transition-colors
-            bg-blue-50 text-blue-600 hover:bg-blue-100
-            dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50">
-          摘要
-        </button>
+    <div class="px-4 py-3 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
+      <div class="text-[11px] font-medium mb-2 tracking-wide" :style="{ color: 'var(--text-muted)' }">快捷操作</div>
+      <div class="flex flex-wrap gap-1.5">
+        <button @click="runCommand('continue')" :disabled="aiStore.isLoading" class="chip">续写</button>
+        <button @click="runCommand('improve')" :disabled="aiStore.isLoading" class="chip">润色</button>
+        <button @click="openDiffReview" :disabled="aiStore.isLoading || !diffTargetReady" class="chip chip-accent">Diff 润色</button>
+        <button @click="runCommand('fix')" :disabled="aiStore.isLoading" class="chip">校对</button>
+        <button @click="runCommand('summarize')" :disabled="aiStore.isLoading" class="chip">摘要</button>
       </div>
     </div>
 
     <!-- Chat Messages -->
-    <div class="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-      <div v-if="aiStore.chatMessages.length === 0 && !showDiffControls && !polishDiffResult && !isDiffLoading" class="text-center py-8">
-        <p class="text-sm" :style="{ color: 'var(--text-muted)' }">在下方输入问题与 AI 对话</p>
-        <p class="text-xs mt-1" :style="{ color: 'var(--text-muted)' }">或使用快捷操作按钮</p>
+    <div class="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
+      <div v-if="aiStore.chatMessages.length === 0 && !showDiffControls && !polishDiffResult && !isDiffLoading" class="text-center py-10">
+        <p class="font-serif text-sm" :style="{ color: 'var(--text-secondary)' }">在下方输入问题与 AI 对话</p>
+        <p class="text-xs mt-1.5" :style="{ color: 'var(--text-muted)' }">或使用上方快捷操作</p>
       </div>
 
-      <div v-if="showDiffControls" class="rounded-lg border p-3 space-y-2"
+      <div v-if="showDiffControls" class="rounded-xl border p-3.5 space-y-2.5"
         :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
         <div class="flex items-center justify-between gap-2">
           <div>
-            <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">Diff 润色要求</div>
+            <div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">Diff 润色要求</div>
             <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ diffTargetLabel }}</div>
           </div>
           <button @click="runPolishDiff" :disabled="isDiffLoading || aiStore.isLoading || !diffTargetReady"
-            class="btn-primary text-xs px-2.5 py-1.5 disabled:opacity-50 shrink-0">
+            class="btn-accent text-xs px-2.5 py-1.5 shrink-0">
             {{ isDiffLoading ? '流式生成中...' : polishDiffResult ? '重新生成' : '生成审阅' }}
           </button>
         </div>
@@ -279,7 +261,7 @@ function handleStreamSend() {
           v-model="diffInstruction"
           rows="3"
           placeholder="更有画面感、压缩节奏、保留人物语气"
-          class="w-full text-xs border rounded-lg px-2.5 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition-colors"
+          class="w-full text-xs border rounded-lg px-3 py-2 resize-none outline-none transition-colors duration-150 focus:ring-2 focus:ring-brand/25"
           :style="{
             backgroundColor: 'var(--surface)',
             borderColor: 'var(--border-clr)',
@@ -290,56 +272,60 @@ function handleStreamSend() {
 
       <div v-for="(msg, idx) in aiStore.chatMessages" :key="idx" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
         <div :class="msg.role === 'user'
-          ? 'inline-block bg-brand text-white rounded-2xl rounded-tr-md px-3 py-2 text-sm max-w-[90%]'
-          : 'inline-block rounded-2xl rounded-tl-md px-3 py-2 text-sm max-w-[90%] whitespace-pre-wrap'"
-          :style="msg.role === 'assistant' ? { backgroundColor: 'var(--surface-secondary)', color: 'var(--text-primary)' } : {}">
+          ? 'inline-block rounded-2xl rounded-tr-md px-3.5 py-2.5 text-sm max-w-[90%]'
+          : 'inline-block rounded-2xl rounded-tl-md px-3.5 py-2.5 text-sm max-w-[90%] whitespace-pre-wrap'"
+          :style="msg.role === 'user'
+            ? { backgroundColor: 'var(--ink)', color: 'var(--ink-text)' }
+            : { backgroundColor: 'var(--surface-secondary)', color: 'var(--text-primary)' }">
           {{ msg.content }}
         </div>
-        <div v-if="msg.role === 'assistant' && msg.content" class="mt-1 text-left">
-          <button @click="applySuggestion(msg.content)" class="text-xs text-brand hover:text-brand-600">
+        <div v-if="msg.role === 'assistant' && msg.content" class="mt-1.5 text-left">
+          <button @click="applySuggestion(msg.content)"
+            class="text-xs font-medium transition-colors hover:underline underline-offset-2"
+            :style="{ color: 'var(--brand-hover)' }">
             插入到编辑器
           </button>
         </div>
       </div>
 
-      <div v-if="isDiffLoading" class="rounded-lg border p-3"
+      <div v-if="isDiffLoading" class="rounded-xl border p-3.5"
         :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
         <div class="flex items-center gap-2 text-sm" :style="{ color: 'var(--text-secondary)' }">
-          <div class="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          <div class="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin"></div>
           正在流式生成 AI 润色...
         </div>
         <div class="text-xs mt-1 pl-6" :style="{ color: 'var(--text-muted)' }">
           {{ streamingDiffText ? `已生成 ${streamingDiffText.length} 字，完成后自动生成 diff` : '等待模型开始返回内容' }}
         </div>
-        <div v-if="streamingDiffText" class="mt-3 text-sm leading-relaxed whitespace-pre-wrap rounded p-2 max-h-48 overflow-y-auto font-serif"
+        <div v-if="streamingDiffText" class="mt-3 text-sm leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-48 overflow-y-auto font-serif"
           :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">
           {{ streamingDiffText }}
         </div>
       </div>
 
-      <div v-if="polishDiffResult" class="rounded-lg border p-3 space-y-3"
+      <div v-if="polishDiffResult" class="rounded-xl border p-3.5 space-y-3"
         :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
         <div class="flex items-center justify-between gap-2">
           <div>
-            <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">AI 修改审阅</div>
+            <div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">AI 修改审阅</div>
             <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">
               {{ selectedText ? '接受后替换当前选中文本' : '接受后替换整章内容' }}
             </div>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
-            <button @click="rejectPolishDiff" class="btn-secondary text-xs px-2 py-1">
+            <button @click="rejectPolishDiff" class="btn-secondary text-xs px-2.5 py-1">
               拒绝
             </button>
-            <button @click="retryPolishDiff" class="btn-secondary text-xs px-2 py-1">
+            <button @click="retryPolishDiff" class="btn-secondary text-xs px-2.5 py-1">
               调整重试
             </button>
-            <button @click="acceptPolishDiff" class="btn-primary text-xs px-2 py-1">
+            <button @click="acceptPolishDiff" class="btn-primary text-xs px-2.5 py-1">
               接受
             </button>
           </div>
         </div>
 
-        <div v-if="polishDiffResult.truncated" class="text-xs rounded px-2 py-1.5"
+        <div v-if="polishDiffResult.truncated" class="text-xs rounded-lg px-2.5 py-1.5"
           :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
           本次只审阅前 {{ polishDiffResult.processed_length }} 字，接受后会保留剩余
           {{ (polishDiffResult.original_length || 0) - (polishDiffResult.processed_length || 0) }} 字原文。
@@ -347,62 +333,66 @@ function handleStreamSend() {
 
         <div class="grid grid-cols-3 gap-2 text-center text-xs">
           <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold text-green-600 dark:text-green-300">+{{ diffStats.addedChars }}</span>
+            <span class="font-semibold" :style="{ color: '#3e7a58' }">+{{ diffStats.addedChars }}</span>
             <span class="ml-1">纯新增字</span>
           </div>
           <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold text-red-600 dark:text-red-300">-{{ diffStats.removedChars }}</span>
+            <span class="font-semibold" :style="{ color: '#a0432c' }">{{ diffStats.removedChars > 0 ? `-${diffStats.removedChars}` : '0' }}</span>
             <span class="ml-1">纯删除字</span>
           </div>
           <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold text-amber-600 dark:text-amber-300">{{ diffStats.replacements }}</span>
+            <span class="font-semibold" :style="{ color: 'var(--brand-hover)' }">{{ diffStats.replacements }}</span>
             <span class="ml-1">处替换</span>
           </div>
         </div>
 
-        <div v-if="polishDiffResult.summary.length" class="space-y-1">
+        <div v-if="polishDiffResult.summary.length" class="space-y-1.5">
           <div class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">主要改动</div>
           <div v-for="(item, idx) in polishDiffResult.summary" :key="idx"
-            class="text-xs rounded px-2 py-1"
+            class="text-xs rounded-lg px-2.5 py-1.5"
             :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
             {{ item }}
           </div>
         </div>
 
-        <div class="space-y-1">
+        <div class="space-y-1.5">
           <div class="flex items-center justify-between gap-2">
             <div class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">对比预览</div>
-            <div class="flex items-center gap-2 text-[11px]" :style="{ color: 'var(--text-muted)' }">
-              <span><span class="inline-block w-2 h-2 rounded-sm bg-red-200 dark:bg-red-900/70"></span> 删除</span>
-              <span><span class="inline-block w-2 h-2 rounded-sm bg-green-200 dark:bg-green-900/70"></span> 新增</span>
+            <div class="flex items-center gap-2.5 text-[11px]" :style="{ color: 'var(--text-muted)' }">
+              <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm" :style="{ backgroundColor: '#efd5cc' }"></span> 删除</span>
+              <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm" :style="{ backgroundColor: '#dde8d9' }"></span> 新增</span>
             </div>
           </div>
-          <div class="text-sm leading-relaxed whitespace-pre-wrap rounded p-2 max-h-64 overflow-y-auto font-serif"
+          <div class="text-sm leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-64 overflow-y-auto font-serif"
             :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">
             <template v-for="(segment, idx) in polishDiffResult.segments" :key="idx">
               <span v-if="segment.type === 'equal'">{{ segment.text }}</span>
-              <del v-else-if="segment.type === 'delete'" class="px-0.5 rounded bg-red-100 text-red-700 decoration-red-500 dark:bg-red-900/40 dark:text-red-300">{{ segment.text }}</del>
-              <ins v-else class="px-0.5 rounded no-underline bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">{{ segment.text }}</ins>
+              <del v-else-if="segment.type === 'delete'"
+                class="px-0.5 rounded decoration-[#a0432c]"
+                :style="{ backgroundColor: '#f3dcd5', color: '#a0432c' }">{{ segment.text }}</del>
+              <ins v-else
+                class="px-0.5 rounded no-underline"
+                :style="{ backgroundColor: '#dfe8dc', color: '#3e6b48' }">{{ segment.text }}</ins>
             </template>
           </div>
         </div>
 
         <div class="space-y-2">
-          <button @click="showSideBySide = !showSideBySide" class="text-xs hover:opacity-80"
+          <button @click="showSideBySide = !showSideBySide" class="text-xs transition-opacity hover:opacity-80"
             :style="{ color: 'var(--text-muted)' }">
             {{ showSideBySide ? '收起原文/润色后' : '展开原文/润色后' }}
           </button>
           <div v-if="showSideBySide" class="grid grid-cols-2 gap-2">
             <div>
               <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">原文</div>
-              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded p-2 max-h-32 overflow-y-auto"
+              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded-lg p-2.5 max-h-32 overflow-y-auto"
                 :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
                 {{ polishDiffResult.original }}
               </div>
             </div>
             <div>
               <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">润色后</div>
-              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded p-2 max-h-32 overflow-y-auto"
+              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded-lg p-2.5 max-h-32 overflow-y-auto"
                 :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
                 {{ diffRevisedPreview }}
               </div>
@@ -417,38 +407,36 @@ function handleStreamSend() {
         AI 思考中...
       </div>
 
-      <div v-if="aiStore.error" class="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+      <div v-if="aiStore.error" class="text-sm px-3.5 py-2.5 rounded-xl"
+        :style="{ backgroundColor: '#f9e3dd', color: '#a0432c' }">
         {{ aiStore.error }}
       </div>
     </div>
 
     <!-- Input -->
-    <div class="border-t p-3" :style="{ borderTopColor: 'var(--border-clr)' }">
-      <div class="flex gap-2">
+    <div class="border-t p-3.5" :style="{ borderTopColor: 'var(--border-clr)' }">
+      <div class="rounded-xl border transition-colors duration-150"
+        :style="{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border-clr)' }">
         <textarea
           v-model="inputText"
           @keydown="handleKeydown"
           @compositionstart="isComposing = true"
           @compositionend="onCompositionEnd"
-          placeholder="输入问题..."
+          placeholder="输入问题，Enter 发送，Shift+Enter 换行"
           rows="2"
-          class="flex-1 text-sm border rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-brand/40 transition-colors"
-          :style="{
-            backgroundColor: 'var(--surface-secondary)',
-            borderColor: 'var(--border-clr)',
-            color: 'var(--text-primary)'
-          }"
+          class="w-full text-sm px-3.5 py-2.5 resize-none outline-none bg-transparent border-none"
+          :style="{ color: 'var(--text-primary)' }"
         ></textarea>
-      </div>
-      <div class="flex justify-between mt-2">
-        <button @click="aiStore.clearChat()" class="text-xs hover:opacity-80" :style="{ color: 'var(--text-muted)' }">清空对话</button>
-        <div class="flex gap-2">
-          <button @click="sendMessage" :disabled="aiStore.isLoading || !inputText.trim()" class="btn-primary text-xs px-3 py-1.5">
-            {{ aiStore.isLoading ? '...' : '发送' }}
-          </button>
-          <button @click="handleStreamSend" :disabled="aiStore.isLoading || !inputText.trim()" class="btn-secondary text-xs px-3 py-1.5">
-            流式
-          </button>
+        <div class="flex justify-between items-center px-3 pb-2.5">
+          <button @click="aiStore.clearChat()" class="text-xs transition-opacity hover:opacity-80" :style="{ color: 'var(--text-muted)' }">清空对话</button>
+          <div class="flex gap-2">
+            <button @click="handleStreamSend" :disabled="aiStore.isLoading || !inputText.trim()" class="btn-secondary text-xs px-3 py-1.5">
+              流式
+            </button>
+            <button @click="sendMessage" :disabled="aiStore.isLoading || !inputText.trim()" class="btn-primary text-xs px-3.5 py-1.5">
+              {{ aiStore.isLoading ? '...' : '发送' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>

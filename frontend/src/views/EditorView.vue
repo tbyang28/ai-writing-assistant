@@ -368,37 +368,48 @@ function stopDrag() {
 }
 </script>
 
+
 <template>
   <div class="flex-1 flex min-h-0 overflow-hidden">
     <!-- Left sidebar - chapters & outlines -->
     <div class="flex flex-col shrink-0 border-r" :style="{ width: leftPanelWidth + 'px', backgroundColor: 'var(--surface)', borderRightColor: 'var(--border-clr)' }">
       <!-- Book info -->
-      <div class="p-3 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
+      <div class="p-3.5 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
         <div class="flex items-center justify-between">
-          <button @click="router.push('/')" class="text-sm" :class="'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'">
-            ← 返回
+          <button @click="router.push('/')"
+            class="flex items-center gap-1.5 text-xs rounded-lg px-1.5 py-1 -ml-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]"
+            :style="{ color: 'var(--text-muted)' }">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5m7-7-7 7 7 7"/>
+            </svg>
+            返回
           </button>
-          <span v-if="saving" class="text-xs" :style="{ color: 'var(--text-muted)' }">保存中...</span>
-          <span v-else class="text-xs" :style="{ color: 'var(--text-muted)' }">已保存</span>
+          <span class="text-[11px]" :style="{ color: 'var(--text-muted)' }">{{ saving ? '保存中...' : '已保存' }}</span>
         </div>
-        <h2 class="text-sm font-semibold mt-1 truncate" :style="{ color: 'var(--text-primary)' }">{{ bookStore.currentBook?.title }}</h2>
+        <h2 class="font-serif text-[15px] font-semibold mt-1.5 truncate" :style="{ color: 'var(--text-primary)' }">{{ bookStore.currentBook?.title }}</h2>
       </div>
 
       <!-- Tabs -->
       <div class="flex border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
         <button @click="showOutline = false; showCharacters = false"
-          class="flex-1 py-2 text-xs font-medium"
-          :class="!showOutline && !showCharacters ? 'text-brand border-b-2 border-brand' : 'text-gray-500 dark:text-gray-400'">
+          class="flex-1 py-2.5 text-xs font-medium transition-colors duration-150"
+          :style="!showOutline && !showCharacters
+            ? { color: 'var(--brand-hover)', boxShadow: 'inset 0 -2px 0 var(--brand)' }
+            : { color: 'var(--text-muted)' }">
           章节
         </button>
         <button @click="showOutline = true; showCharacters = false"
-          class="flex-1 py-2 text-xs font-medium"
-          :class="showOutline ? 'text-brand border-b-2 border-brand' : 'text-gray-500 dark:text-gray-400'">
+          class="flex-1 py-2.5 text-xs font-medium transition-colors duration-150"
+          :style="showOutline
+            ? { color: 'var(--brand-hover)', boxShadow: 'inset 0 -2px 0 var(--brand)' }
+            : { color: 'var(--text-muted)' }">
           大纲
         </button>
         <button @click="showCharacters = true; showOutline = false"
-          class="flex-1 py-2 text-xs font-medium"
-          :class="showCharacters ? 'text-brand border-b-2 border-brand' : 'text-gray-500 dark:text-gray-400'">
+          class="flex-1 py-2.5 text-xs font-medium transition-colors duration-150"
+          :style="showCharacters
+            ? { color: 'var(--brand-hover)', boxShadow: 'inset 0 -2px 0 var(--brand)' }
+            : { color: 'var(--text-muted)' }">
           角色
         </button>
       </div>
@@ -406,39 +417,41 @@ function stopDrag() {
       <!-- Chapters list -->
       <div v-if="!showOutline && !showCharacters" class="flex-1 overflow-y-auto">
         <div class="p-2">
-          <button @click="openNewChapter" :disabled="creatingChapter" class="w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
+          <button @click="openNewChapter" :disabled="creatingChapter"
+            class="w-full flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors duration-150 hover:bg-[var(--brand-soft)]"
+            :style="{ color: 'var(--brand-hover)' }">
             + 新建章节
           </button>
         </div>
-        <div v-for="ch in chapters" :key="ch.id"
-          @click="selectChapter(ch.id)"
-          class="group flex items-start gap-2 px-3 py-2 cursor-pointer text-sm border-b border-l-4 transition-colors"
-          :class="activeChapterId === ch.id
-            ? 'border-l-brand bg-brand-600/15 hover:bg-brand-600/20 dark:bg-brand-900/35 dark:hover:bg-brand-900/45'
-            : 'border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-800'"
-          :style="{ borderBottomColor: 'var(--border-clr)' }">
-          <div class="min-w-0 flex-1">
-            <div class="font-medium truncate"
-              :class="activeChapterId === ch.id ? 'text-brand-700 dark:text-white' : ''"
-              :style="activeChapterId === ch.id ? {} : { color: 'var(--text-primary)' }">
-              {{ chapterDisplayTitle(ch) }}
+        <div class="px-2 pb-2 space-y-0.5">
+          <div v-for="ch in chapters" :key="ch.id"
+            @click="selectChapter(ch.id)"
+            class="group flex items-start gap-2 px-2.5 py-2 cursor-pointer text-sm rounded-lg border-l-[3px] transition-colors duration-150"
+            :style="activeChapterId === ch.id
+              ? { borderLeftColor: 'var(--brand)', backgroundColor: 'var(--brand-soft)' }
+              : { borderLeftColor: 'transparent' }"
+            :class="activeChapterId !== ch.id && 'hover:bg-[var(--surface-hover)]'">
+            <div class="min-w-0 flex-1">
+              <div class="font-medium truncate"
+                :style="{ color: activeChapterId === ch.id ? 'var(--brand-hover)' : 'var(--text-primary)' }">
+                {{ chapterDisplayTitle(ch) }}
+              </div>
+              <div class="text-[11px] mt-0.5"
+                :style="{ color: activeChapterId === ch.id ? 'var(--brand-hover)' : 'var(--text-muted)' }">
+                {{ ch.word_count }}字
+              </div>
             </div>
-            <div class="text-xs mt-0.5"
-              :class="activeChapterId === ch.id ? 'text-brand-600 dark:text-brand-300' : ''"
-              :style="activeChapterId === ch.id ? {} : { color: 'var(--text-muted)' }">
-              {{ ch.word_count }}字
-            </div>
+            <button
+              type="button"
+              @click.stop="deleteChapter(ch)"
+              class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 hover:text-[#a0432c]"
+              :style="{ color: 'var(--text-muted)' }"
+              title="删除章节"
+              aria-label="删除章节"
+            >
+              删除
+            </button>
           </div>
-          <button
-            type="button"
-            @click.stop="deleteChapter(ch)"
-            class="shrink-0 rounded-md px-1.5 py-0.5 text-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-            :class="'text-gray-400 hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-900/30 dark:hover:text-red-300'"
-            title="删除章节"
-            aria-label="删除章节"
-          >
-            删除
-          </button>
         </div>
         <div v-if="chapters.length === 0" class="text-center py-8 text-sm" :style="{ color: 'var(--text-muted)' }">
           暂无章节
@@ -448,13 +461,16 @@ function stopDrag() {
       <!-- Outlines -->
       <div v-else-if="showOutline" class="flex-1 overflow-y-auto">
         <div class="p-2">
-          <button @click="showNewOutlineModal = true" class="w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
+          <button @click="showNewOutlineModal = true"
+            class="w-full flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors duration-150 hover:bg-[var(--brand-soft)]"
+            :style="{ color: 'var(--brand-hover)' }">
             + 新建大纲
           </button>
         </div>
-        <div v-for="ol in outlines" :key="ol.id" class="px-3 py-2 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
+        <div v-for="ol in outlines" :key="ol.id" class="mx-2 mb-1 rounded-lg px-3 py-2.5"
+          :style="{ backgroundColor: 'var(--surface-secondary)' }">
           <div class="font-medium text-sm" :style="{ color: 'var(--text-primary)' }">{{ ol.title }}</div>
-          <div class="text-xs mt-1 whitespace-pre-wrap line-clamp-3" :style="{ color: 'var(--text-secondary)' }">{{ ol.content }}</div>
+          <div class="text-xs mt-1 whitespace-pre-wrap line-clamp-3 leading-5" :style="{ color: 'var(--text-secondary)' }">{{ ol.content }}</div>
         </div>
         <div v-if="outlines.length === 0" class="text-center py-8 text-sm" :style="{ color: 'var(--text-muted)' }">
           暂无大纲
@@ -463,39 +479,43 @@ function stopDrag() {
 
       <!-- Characters -->
       <div v-else class="flex-1 overflow-y-auto">
-        <div class="p-2">
-          <button @click="showNewCharacterModal = true" class="w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
+        <div class="p-2 space-y-1">
+          <button @click="showNewCharacterModal = true"
+            class="w-full flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors duration-150 hover:bg-[var(--brand-soft)]"
+            :style="{ color: 'var(--brand-hover)' }">
             + 新建角色
           </button>
           <button @click="extractCharactersFromChapter"
             :disabled="!editorContent.trim() || aiStore.isLoading"
-            class="mt-1 w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50">
+            class="chip chip-accent w-full justify-between">
             <span>{{ aiStore.isLoading ? '识别中...' : 'AI 识别人物' }}</span>
             <span>当前章</span>
           </button>
           <button @click="showNewRelationModal = true"
             :disabled="characters.length < 2"
-            class="mt-1 w-full flex items-center gap-1 px-2 py-1.5 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+            class="chip w-full">
             + 新建关系
           </button>
           <button @click="switchWorkspaceMode('graph')"
-            class="mt-1 w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg border transition-colors"
-            :class="workspaceMode === 'graph' ? 'text-cyan-600 border-cyan-300 bg-cyan-50 dark:text-cyan-300 dark:border-cyan-800 dark:bg-cyan-950/40' : 'text-gray-500 border-transparent hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800'">
+            class="chip w-full justify-between"
+            :class="workspaceMode === 'graph' && 'chip-accent'">
             <span>打开关系图</span>
-            <span>{{ characters.length }}人</span>
+            <span>{{ characters.length }} 人</span>
           </button>
         </div>
-        <div v-for="ch in characters" :key="ch.id" class="px-3 py-2 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
-          <div class="flex items-center gap-2">
-            <div class="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center text-xs font-bold">
+        <div v-for="ch in characters" :key="ch.id" class="mx-2 mb-1 rounded-lg px-3 py-2.5"
+          :style="{ backgroundColor: 'var(--surface-secondary)' }">
+          <div class="flex items-center gap-2.5">
+            <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+              :style="{ backgroundColor: 'var(--ink)', color: 'var(--ink-text)' }">
               {{ ch.name[0] }}
             </div>
             <div>
               <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">{{ ch.name }}</div>
-              <div v-if="ch.role" class="text-xs" :style="{ color: 'var(--text-muted)' }">{{ ch.role }}</div>
+              <div v-if="ch.role" class="text-[11px]" :style="{ color: 'var(--brand-hover)' }">{{ ch.role }}</div>
             </div>
           </div>
-          <div v-if="ch.bio" class="text-xs mt-1 ml-8" :style="{ color: 'var(--text-secondary)' }">{{ ch.bio }}</div>
+          <div v-if="ch.bio" class="text-xs mt-1.5 ml-9 leading-5" :style="{ color: 'var(--text-secondary)' }">{{ ch.bio }}</div>
         </div>
         <div v-if="characters.length === 0" class="text-center py-8 text-sm" :style="{ color: 'var(--text-muted)' }">
           暂无角色
@@ -504,19 +524,20 @@ function stopDrag() {
 
       <!-- Inspirations at bottom -->
       <div class="border-t" :style="{ borderTopColor: 'var(--border-clr)' }">
-        <button @click="showNewInspirationModal = true" class="w-full px-3 py-2 text-xs text-brand hover:bg-brand-50 dark:hover:bg-brand-900/30 text-left">
+        <button @click="showNewInspirationModal = true"
+          class="w-full px-3.5 py-2.5 text-xs font-medium text-left transition-colors duration-150 hover:bg-[var(--brand-soft)]"
+          :style="{ color: 'var(--brand-hover)' }">
           + 记录灵感
         </button>
-        <div v-for="ins in inspirations.slice(0, 3)" :key="ins.id" class="px-3 py-1.5 border-t" :style="{ borderTopColor: 'var(--border-clr)' }">
-          <div class="text-xs font-medium" :style="{ color: 'var(--text-primary)' }">{{ ins.title }}</div>
+        <div v-for="ins in inspirations.slice(0, 3)" :key="ins.id" class="px-3.5 py-2 border-t" :style="{ borderTopColor: 'var(--border-clr)' }">
+          <div class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">{{ ins.title }}</div>
         </div>
       </div>
     </div>
 
     <!-- Left resize handle -->
     <div
-      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-700 dark:active:bg-brand-600 shrink-0 relative"
-      :style="{ backgroundColor: 'var(--surface-secondary)' }"
+      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-800 shrink-0 relative"
       @mousedown.prevent="startDrag($event, 'left')"
     >
       <div class="absolute inset-y-0 left-0 w-px" :style="{ backgroundColor: 'var(--border-clr)' }"></div>
@@ -525,32 +546,40 @@ function stopDrag() {
     <!-- Editor area -->
     <div class="flex-1 flex flex-col min-w-0" :style="{ backgroundColor: 'var(--surface)' }">
       <!-- Title bar -->
-      <div class="h-12 flex items-center px-4 gap-2 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
+      <div class="flex items-center px-5 py-2 gap-2.5 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
         <template v-if="workspaceMode === 'editor'">
           <span
             class="shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold"
-            :style="{ color: 'var(--text-muted)', borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"
+            :style="{ color: 'var(--brand-hover)', borderColor: 'var(--border-clr)', backgroundColor: 'var(--brand-softer)' }"
           >
             {{ chapterPrefix(activeChapterOrder) }}
           </span>
-          <input v-model="editorTitle" class="flex-1 text-base font-medium border-none outline-none bg-transparent" :style="{ color: 'var(--text-primary)' }" placeholder="章节标题" />
+          <input v-model="editorTitle"
+            class="flex-1 font-serif text-lg font-semibold border-none outline-none bg-transparent placeholder:font-normal"
+            :style="{ color: 'var(--text-primary)' }" placeholder="章节标题" />
         </template>
-        <div v-else class="flex-1 text-base font-medium" :style="{ color: 'var(--text-primary)' }">
+        <div v-else class="flex-1 font-serif text-lg font-semibold" :style="{ color: 'var(--text-primary)' }">
           角色关系图
         </div>
         <div class="flex items-center gap-2">
-          <button @click="switchWorkspaceMode('editor')"
-            class="text-xs px-2 py-1 rounded-lg"
-            :class="workspaceMode === 'editor' ? 'bg-brand text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'">
-            编辑器
-          </button>
-          <button @click="switchWorkspaceMode('graph')"
-            class="text-xs px-2 py-1 rounded-lg"
-            :class="workspaceMode === 'graph' ? 'bg-brand text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'">
-            关系图
-          </button>
-          <span v-if="workspaceMode === 'editor'" class="text-xs" :style="{ color: 'var(--text-muted)' }">{{ editorContent.length }} 字</span>
-          <button @click="aiStore.openPanel()" class="btn-secondary text-xs px-2 py-1">
+          <div class="flex rounded-lg p-0.5" :style="{ backgroundColor: 'var(--surface-secondary)' }">
+            <button @click="switchWorkspaceMode('editor')"
+              class="text-xs px-2.5 py-1 rounded-md transition-all duration-150"
+              :style="workspaceMode === 'editor'
+                ? { backgroundColor: 'var(--surface)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-soft)', fontWeight: 500 }
+                : { color: 'var(--text-muted)' }">
+              编辑器
+            </button>
+            <button @click="switchWorkspaceMode('graph')"
+              class="text-xs px-2.5 py-1 rounded-md transition-all duration-150"
+              :style="workspaceMode === 'graph'
+                ? { backgroundColor: 'var(--surface)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-soft)', fontWeight: 500 }
+                : { color: 'var(--text-muted)' }">
+              关系图
+            </button>
+          </div>
+          <span v-if="workspaceMode === 'editor'" class="text-xs tabular-nums" :style="{ color: 'var(--text-muted)' }">{{ editorContent.length }} 字</span>
+          <button @click="aiStore.openPanel()" class="btn-accent text-xs px-3 py-1.5">
             AI 助手
           </button>
         </div>
@@ -564,30 +593,34 @@ function stopDrag() {
           :relations="characterRelations"
           :book-title="bookStore.currentBook?.title"
         />
-        <div v-else-if="activeChapterId" class="max-w-3xl mx-auto p-6">
+        <div v-else-if="activeChapterId" class="max-w-3xl mx-auto px-8 py-8">
           <textarea
             ref="textareaRef"
             v-model="editorContent"
             @select="updateEditorSelection"
             @keyup="updateEditorSelection"
             @mouseup="updateEditorSelection"
-            class="w-full min-h-[300px] text-base leading-relaxed border-none outline-none resize-none bg-transparent font-serif overflow-y-auto"
+            class="w-full min-h-[300px] text-[17px] leading-loose border-none outline-none resize-none bg-transparent font-serif overflow-y-auto"
             :style="{ color: 'var(--text-primary)' }"
             placeholder="开始写作..."
           ></textarea>
           <!-- AI Insert Undo Toast -->
           <div v-if="showAiUndo"
-            class="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-lg shadow-lg text-sm z-50"
-            :style="{ backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border-clr)' }">
+            class="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm z-50"
+            :style="{ backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border-clr)', boxShadow: 'var(--shadow-lift)' }">
             <span>{{ aiUndoMessage }}</span>
             <button @click="undoAiInsert"
-              class="text-brand font-semibold hover:opacity-80 text-sm">撤销</button>
-            <button @click="showAiUndo = false" class="ml-1 opacity-50 hover:opacity-100 text-xs">✕</button>
+              class="font-semibold transition-colors text-sm" :style="{ color: 'var(--brand-hover)' }">撤销</button>
+            <button @click="showAiUndo = false" class="ml-1 opacity-50 hover:opacity-100 transition-opacity" aria-label="关闭">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <path d="M18 6 6 18M6 6l12 12"/>
+              </svg>
+            </button>
           </div>
         </div>
         <div v-else class="flex items-center justify-center h-full" :style="{ color: 'var(--text-muted)' }">
           <div class="text-center">
-            <p class="mb-2">请选择或创建一个章节</p>
+            <p class="font-serif text-lg mb-3">请选择或创建一个章节</p>
             <button @click="openNewChapter" :disabled="creatingChapter" class="btn-primary text-sm">新建章节</button>
           </div>
         </div>
@@ -597,8 +630,7 @@ function stopDrag() {
     <!-- Right resize handle -->
     <div
       v-if="aiStore.isPanelOpen"
-      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-700 dark:active:bg-brand-600 shrink-0 relative"
-      :style="{ backgroundColor: 'var(--surface-secondary)' }"
+      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-800 shrink-0 relative"
       @mousedown.prevent="startDrag($event, 'right')"
     >
       <div class="absolute inset-y-0 right-0 w-px" :style="{ backgroundColor: 'var(--border-clr)' }"></div>
@@ -619,13 +651,13 @@ function stopDrag() {
     <!-- Modals -->
     <div v-if="showNewChapterModal" class="modal-overlay" @click.self="cancelNewChapter">
       <div class="modal-content">
-        <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建章节</h3>
-        <div class="mb-3 rounded-lg border px-3 py-2 text-sm"
+        <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建章节</h3>
+        <div class="mb-3 rounded-xl border px-3.5 py-2.5 text-sm"
           :style="{ color: 'var(--text-muted)', borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
           即将创建 {{ chapterPrefix(nextChapterOrder) }}，填写标题后会显示为“{{ chapterPrefix(nextChapterOrder) }} {{ newChapterTitle.trim() || '章节标题' }}”。
         </div>
         <input v-model="newChapterTitle" type="text" class="form-input" placeholder="章节标题" @keyup.enter="confirmNewChapter" />
-        <div class="flex justify-end gap-3 mt-4">
+        <div class="flex justify-end gap-3 mt-5">
           <button @click="cancelNewChapter" class="btn-secondary">取消</button>
           <button @click="confirmNewChapter" :disabled="creatingChapter" class="btn-primary">
             {{ creatingChapter ? '创建中...' : '确定' }}
@@ -636,9 +668,9 @@ function stopDrag() {
 
     <div v-if="showNewOutlineModal" class="modal-overlay" @click.self="showNewOutlineModal = false">
       <div class="modal-content">
-        <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建大纲</h3>
+        <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建大纲</h3>
         <input v-model="newOutlineTitle" type="text" class="form-input" placeholder="大纲标题" @keyup.enter="createOutline" />
-        <div class="flex justify-end gap-3 mt-4">
+        <div class="flex justify-end gap-3 mt-5">
           <button @click="showNewOutlineModal = false" class="btn-secondary">取消</button>
           <button @click="createOutline" :disabled="!newOutlineTitle.trim()" class="btn-primary">创建</button>
         </div>
@@ -647,12 +679,12 @@ function stopDrag() {
 
     <div v-if="showNewCharacterModal" class="modal-overlay" @click.self="showNewCharacterModal = false">
       <div class="modal-content">
-        <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建角色</h3>
+        <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建角色</h3>
         <div class="space-y-3">
           <input v-model="newCharacterName" type="text" class="form-input" placeholder="角色名称" />
           <input v-model="newCharacterRole" type="text" class="form-input" placeholder="角色类型（可选）" />
         </div>
-        <div class="flex justify-end gap-3 mt-4">
+        <div class="flex justify-end gap-3 mt-5">
           <button @click="showNewCharacterModal = false" class="btn-secondary">取消</button>
           <button @click="createCharacter" :disabled="!newCharacterName.trim()" class="btn-primary">创建</button>
         </div>
@@ -663,10 +695,11 @@ function stopDrag() {
       <div class="modal-content max-w-2xl">
         <div class="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h3 class="text-lg font-semibold" :style="{ color: 'var(--text-primary)' }">AI 识别到的人物</h3>
+            <h3 class="font-serif text-xl font-semibold" :style="{ color: 'var(--text-primary)' }">AI 识别到的人物</h3>
             <p class="text-sm mt-1" :style="{ color: 'var(--text-muted)' }">确认后保存到角色库，避免误识别的内容可以取消勾选。</p>
           </div>
-          <span class="text-xs px-2 py-1 rounded-full bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+          <span class="text-xs px-2.5 py-1 rounded-full font-medium"
+            :style="{ backgroundColor: 'var(--brand-soft)', color: 'var(--brand-hover)' }">
             {{ extractedCharacters.filter((item) => item.selected).length }} 个待保存
           </span>
         </div>
@@ -675,32 +708,32 @@ function stopDrag() {
           <label
             v-for="character in extractedCharacters"
             :key="character.name"
-            class="flex gap-3 rounded-lg border p-3 cursor-pointer"
-            :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"
+            class="flex gap-3 rounded-xl border p-3.5 cursor-pointer transition-colors duration-150"
+            :style="{ borderColor: character.selected ? 'var(--brand)' : 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"
           >
-            <input v-model="character.selected" type="checkbox" class="mt-1 accent-violet-600" />
+            <input v-model="character.selected" type="checkbox" class="mt-1 accent-brand" />
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-3">
-                <div class="font-medium" :style="{ color: 'var(--text-primary)' }">{{ character.name }}</div>
+                <div class="font-medium font-serif" :style="{ color: 'var(--text-primary)' }">{{ character.name }}</div>
                 <div class="text-xs" :style="{ color: 'var(--text-muted)' }">
                   置信度 {{ Math.round(character.confidence * 100) }}%
                 </div>
               </div>
-              <div class="text-xs mt-1 text-violet-600 dark:text-violet-300">{{ character.role || '未知' }}</div>
+              <div class="text-xs mt-1 font-medium" :style="{ color: 'var(--brand-hover)' }">{{ character.role || '未知' }}</div>
               <p class="text-sm mt-2 leading-6" :style="{ color: 'var(--text-secondary)' }">{{ character.bio }}</p>
             </div>
           </label>
         </div>
 
-        <div v-else class="rounded-lg border p-6 text-center" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-muted)' }">
+        <div v-else class="rounded-xl border p-6 text-center" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-muted)' }">
           没有识别到新的角色。可能是章节内容太短，或人物已经存在于角色库。
         </div>
 
-        <div v-if="aiStore.error" class="mt-3 text-sm text-red-500">
+        <div v-if="aiStore.error" class="mt-3 text-sm px-3 py-2 rounded-lg" :style="{ backgroundColor: '#f9e3dd', color: '#a0432c' }">
           {{ aiStore.error }}
         </div>
 
-        <div class="flex justify-end gap-3 mt-4">
+        <div class="flex justify-end gap-3 mt-5">
           <button @click="showExtractCharactersModal = false" class="btn-secondary">取消</button>
           <button @click="saveExtractedCharacters" :disabled="!extractedCharacters.some((item) => item.selected)" class="btn-primary">
             保存选中人物
@@ -711,7 +744,7 @@ function stopDrag() {
 
     <div v-if="showNewRelationModal" class="modal-overlay" @click.self="showNewRelationModal = false">
       <div class="modal-content">
-        <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建人物关系</h3>
+        <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建人物关系</h3>
         <div class="space-y-3">
           <select v-model="newRelationSource" class="form-input">
             <option value="">选择起点角色</option>
@@ -734,10 +767,10 @@ function stopDrag() {
           <label class="form-label">
             关系强度：{{ newRelationStrength }}
           </label>
-          <input v-model.number="newRelationStrength" type="range" min="1" max="5" class="w-full accent-cyan-500" />
+          <input v-model.number="newRelationStrength" type="range" min="1" max="5" class="w-full accent-brand" />
           <textarea v-model="newRelationDescription" rows="3" class="form-textarea" placeholder="关系说明，例如：共同调查宗门旧案，彼此信任但隐藏秘密。" />
         </div>
-        <div class="flex justify-end gap-3 mt-4">
+        <div class="flex justify-end gap-3 mt-5">
           <button @click="showNewRelationModal = false" class="btn-secondary">取消</button>
           <button @click="createRelation" :disabled="!newRelationSource || !newRelationTarget || newRelationSource === newRelationTarget" class="btn-primary">
             创建关系
@@ -748,12 +781,12 @@ function stopDrag() {
 
     <div v-if="showNewInspirationModal" class="modal-overlay" @click.self="showNewInspirationModal = false">
       <div class="modal-content">
-        <h3 class="text-lg font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">记录灵感</h3>
+        <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">记录灵感</h3>
         <div class="space-y-3">
           <input v-model="newInspirationTitle" type="text" class="form-input" placeholder="灵感标题" />
           <textarea v-model="newInspirationContent" rows="3" class="form-textarea" placeholder="灵感内容" />
         </div>
-        <div class="flex justify-end gap-3 mt-4">
+        <div class="flex justify-end gap-3 mt-5">
           <button @click="showNewInspirationModal = false" class="btn-secondary">取消</button>
           <button @click="createInspiration" :disabled="!newInspirationTitle.trim() || !newInspirationContent.trim()" class="btn-primary">保存</button>
         </div>

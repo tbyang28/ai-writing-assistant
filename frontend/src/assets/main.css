@@ -3,26 +3,50 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * Claude 风格设计令牌（claude.ai 的暖纸面语言）
+   * 浅色：米纸底 + 暖墨色文字 + Claude 橙 accent
+   * 深色：暖炭色底 + 米色文字，accent 稍提亮保证对比度
+   */
   :root {
-    --surface: #ffffff;
-    --surface-secondary: #f8fafc;
-    --surface-hover: #f1f5f9;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #94a3b8;
-    --border-clr: #e2e8f0;
-    --bg-page: #f8fafc;
+    --bg-page: #f5f4ee;
+    --surface: #fffefa;
+    --surface-secondary: #edebe2;
+    --surface-hover: #e7e4d8;
+    --text-primary: #1f1e19;
+    --text-secondary: #5c594d;
+    --text-muted: #8f8c7c;
+    --border-clr: #e3e0d2;
+    --brand: #d97757;
+    --brand-hover: #c5613f;
+    --brand-soft: #f6e3d7;
+    --brand-softer: #faf0e8;
+    /* Claude 标志性墨黑按钮（深色模式下反转为米白按钮） */
+    --ink: #26251d;
+    --ink-text: #f7f5ea;
+    --ink-hover: #3b392f;
+    --shadow-soft: 0 1px 2px rgba(31, 30, 25, 0.04), 0 4px 16px rgba(31, 30, 25, 0.05);
+    --shadow-lift: 0 2px 4px rgba(31, 30, 25, 0.05), 0 12px 32px rgba(31, 30, 25, 0.09);
   }
 
   .dark {
-    --surface: #1e293b;
-    --surface-secondary: #1a2332;
-    --surface-hover: #334155;
-    --text-primary: #f1f5f9;
-    --text-secondary: #cbd5e1;
-    --text-muted: #64748b;
-    --border-clr: #334155;
-    --bg-page: #0f172a;
+    --bg-page: #1e1e1b;
+    --surface: #2a2a25;
+    --surface-secondary: #22221e;
+    --surface-hover: #35352d;
+    --text-primary: #f0eee2;
+    --text-secondary: #b6b4a4;
+    --text-muted: #86847a;
+    --border-clr: #3b3a31;
+    --brand: #e08a68;
+    --brand-hover: #d97757;
+    --brand-soft: #3d2d21;
+    --brand-softer: #33291f;
+    --ink: #f0eee1;
+    --ink-text: #26251d;
+    --ink-hover: #ffffff;
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.28);
+    --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.4);
   }
 
   html, body {
@@ -31,68 +55,173 @@
   body {
     background-color: var(--bg-page);
     color: var(--text-primary);
+    font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
   }
 
-  /* Scrollbar styling for dark mode */
-  .dark ::-webkit-scrollbar-track {
-    background: #1e293b;
+  /* 文本选择色用 Claude 橙的淡底 */
+  ::selection {
+    background-color: rgba(217, 119, 87, 0.28);
   }
-  .dark ::-webkit-scrollbar-thumb {
-    background: #475569;
-    border-radius: 4px;
-  }
+
+  /* 细滚动条，随主题取色 */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-clr);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+
+  /* 尊重减少动效偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
+  /* Claude 标志性墨黑主按钮（深色模式反转为米白） */
   .btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2 bg-brand text-white rounded-lg font-medium text-sm
-           hover:bg-brand-600 active:bg-brand-700 transition-colors duration-150
+    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-medium text-sm
+           transition-colors duration-150 cursor-pointer
            disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--ink);
+    color: var(--ink-text);
   }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--ink-hover);
+  }
+
+  /* Claude 橙强调按钮 —— 只给最关键的 AI 动作用 */
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-medium text-sm
+           transition-colors duration-150 cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--brand);
+    color: #fffdf8;
+  }
+  .btn-accent:hover:not(:disabled) {
+    background-color: var(--brand-hover);
+  }
+
   .btn-secondary {
-    @apply inline-flex items-center justify-center px-4 py-2 bg-white text-gray-700 rounded-lg font-medium text-sm
-           border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150
-           dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600;
-  }
-  .btn-ghost {
-    @apply inline-flex items-center justify-center px-3 py-1.5 text-sm text-gray-600 rounded-lg
-           hover:bg-gray-100 active:bg-gray-200 transition-colors duration-150
-           dark:text-gray-300 dark:hover:bg-gray-700 dark:active:bg-gray-600;
-  }
-  .form-input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
-           focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand
-           placeholder:text-gray-400 transition-colors duration-150
-           dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500;
-  }
-  .form-textarea {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none
-           focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand
-           placeholder:text-gray-400 transition-colors duration-150
-           dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500;
-  }
-  .form-label {
-    @apply block text-sm font-medium mb-1;
-    color: var(--text-secondary);
-  }
-  .card {
-    @apply bg-white rounded-xl border shadow-sm;
+    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-medium text-sm border
+           transition-colors duration-150 cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed;
     background-color: var(--surface);
     border-color: var(--border-clr);
+    color: var(--text-secondary);
   }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm rounded-xl
+           transition-colors duration-150 cursor-pointer;
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  /* 快捷操作小胶囊（AI 面板），统一暖中性风 */
+  .chip {
+    @apply inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-lg
+           transition-colors duration-150 cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--surface-secondary);
+    color: var(--text-secondary);
+  }
+  .chip:hover:not(:disabled) {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+  .chip-accent {
+    background-color: var(--brand-soft);
+    color: var(--brand-hover);
+  }
+  .dark .chip-accent {
+    color: var(--brand);
+  }
+  .chip-accent:hover:not(:disabled) {
+    background-color: var(--brand);
+    color: #fffdf8;
+  }
+  .dark .chip-accent:hover:not(:disabled) {
+    color: #26251d;
+  }
+
+  .form-input {
+    @apply w-full px-3.5 py-2.5 border rounded-xl text-sm outline-none
+           transition-colors duration-150;
+    background-color: var(--surface);
+    border-color: var(--border-clr);
+    color: var(--text-primary);
+  }
+  .form-input::placeholder {
+    color: var(--text-muted);
+  }
+  .form-input:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
+  }
+
+  .form-textarea {
+    @apply w-full px-3.5 py-2.5 border rounded-xl text-sm resize-none outline-none
+           transition-colors duration-150;
+    background-color: var(--surface);
+    border-color: var(--border-clr);
+    color: var(--text-primary);
+  }
+  .form-textarea::placeholder {
+    color: var(--text-muted);
+  }
+  .form-textarea:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
+  }
+
+  .form-label {
+    @apply block text-sm font-medium mb-1.5;
+    color: var(--text-secondary);
+  }
+
+  .card {
+    @apply rounded-2xl border;
+    background-color: var(--surface);
+    border-color: var(--border-clr);
+    box-shadow: var(--shadow-soft);
+  }
+
   .modal-overlay {
-    @apply fixed inset-0 bg-black/30 flex items-center justify-center z-50;
+    @apply fixed inset-0 flex items-center justify-center z-50;
+    background-color: rgba(31, 30, 25, 0.4);
+    backdrop-filter: blur(2px);
   }
   .modal-content {
-    @apply rounded-2xl p-6 shadow-xl max-w-md w-full mx-4;
+    @apply rounded-2xl p-6 max-w-md w-full mx-4;
     background-color: var(--surface);
     color: var(--text-primary);
+    border: 1px solid var(--border-clr);
+    box-shadow: var(--shadow-lift);
+  }
+
+  /* Claude 风小字标签（大写、宽字距） */
+  .eyebrow {
+    @apply text-xs font-semibold uppercase;
+    letter-spacing: 0.18em;
+    color: var(--brand);
   }
 }

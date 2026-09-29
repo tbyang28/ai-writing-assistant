@@ -26,17 +26,18 @@ const props = defineProps<{
 
 const selectedNodeId = ref<string | null>(null)
 
+// 暖陶土色系 —— 与 Claude 风格一致，在米纸/暖炭两种底色上都有足够对比度
 const rolePalettes = [
-  { keys: ['主角', '男主', '女主', 'protagonist'], color: '#2563eb', group: '核心' },
-  { keys: ['反派', '敌人', 'boss', 'villain'], color: '#dc2626', group: '对立' },
-  { keys: ['师父', '导师', 'mentor'], color: '#7c3aed', group: '引导' },
-  { keys: ['配角', '朋友', '伙伴', 'ally'], color: '#059669', group: '同盟' },
+  { keys: ['主角', '男主', '女主', 'protagonist'], color: '#D97757', group: '核心' },
+  { keys: ['反派', '敌人', 'boss', 'villain'], color: '#C25344', group: '对立' },
+  { keys: ['师父', '导师', 'mentor'], color: '#64829F', group: '引导' },
+  { keys: ['配角', '朋友', '伙伴', 'ally'], color: '#448A6A', group: '同盟' },
 ]
 
 function classifyRole(role?: string) {
   const normalized = (role || '').toLowerCase()
   const match = rolePalettes.find((item) => item.keys.some((key) => normalized.includes(key.toLowerCase())))
-  return match || { color: '#f59e0b', group: '其他' }
+  return match || { color: '#C9974F', group: '其他' }
 }
 
 const nodes = computed<GraphNode[]>(() => {
@@ -156,67 +157,58 @@ function normalizeRelationType(type: string): GraphEdge['type'] {
 
 function edgeColor(type: GraphEdge['type']) {
   const colors = {
-    ally: '#10b981',
-    rival: '#ef4444',
-    mentor: '#3b82f6',
-    complex: '#a855f7',
+    ally: '#448A6A',
+    rival: '#C25344',
+    mentor: '#64829F',
+    complex: '#C9974F',
   }
   return colors[type]
 }
 </script>
 
 <template>
-  <div class="h-full overflow-hidden bg-[#0b1020] text-white">
+  <div class="h-full overflow-hidden" :style="{ backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }">
     <div v-if="characters.length < 2" class="h-full flex items-center justify-center px-6">
       <div class="max-w-md text-center">
-        <div class="mx-auto mb-5 h-20 w-20 rounded-full bg-white/10 flex items-center justify-center text-3xl">关系</div>
-        <h3 class="text-xl font-semibold">角色还不够生成关系图</h3>
-        <p class="mt-2 text-sm text-slate-300">至少创建 2 个角色后，这里会自动生成可展示的人物网络。</p>
+        <div class="mx-auto mb-5 h-20 w-20 rounded-full flex items-center justify-center"
+          :style="{ backgroundColor: 'var(--brand-soft)', color: 'var(--brand-hover)' }">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" /><circle cx="18" cy="18" r="3" />
+            <path d="M8.5 8.5l7 7M15.5 8.5l-7 7M9 6h6M9 18h6M6 9v6M18 9v6" />
+          </svg>
+        </div>
+        <h3 class="font-serif text-xl font-semibold" :style="{ color: 'var(--text-primary)' }">角色还不够生成关系图</h3>
+        <p class="mt-2 text-sm" :style="{ color: 'var(--text-muted)' }">至少创建 2 个角色后，这里会自动生成可展示的人物网络。</p>
       </div>
     </div>
 
     <div v-else class="h-full grid grid-rows-[auto_1fr]">
-      <div class="border-b border-white/10 px-6 py-4">
+      <div class="border-b px-6 py-4" :style="{ borderBottomColor: 'var(--border-clr)' }">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div class="text-xs uppercase tracking-[0.2em] text-cyan-300">Character Network</div>
-            <h2 class="mt-1 text-2xl font-semibold">{{ bookTitle || '角色关系图' }}</h2>
+            <div class="eyebrow">Character Network</div>
+            <h2 class="mt-1.5 font-serif text-2xl font-semibold" :style="{ color: 'var(--text-primary)' }">{{ bookTitle || '角色关系图' }}</h2>
           </div>
-          <div class="grid grid-cols-4 gap-3 text-center">
-            <div class="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
-              <div class="text-lg font-semibold">{{ nodes.length }}</div>
-              <div class="text-xs text-slate-300">角色</div>
-            </div>
-            <div class="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
-              <div class="text-lg font-semibold">{{ edges.length }}</div>
-              <div class="text-xs text-slate-300">关系</div>
-            </div>
-            <div class="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
-              <div class="text-lg font-semibold">{{ groupCount }}</div>
-              <div class="text-xs text-slate-300">阵营</div>
-            </div>
-            <div class="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
-              <div class="text-lg font-semibold">{{ selectedNode?.name?.slice(0, 4) }}</div>
-              <div class="text-xs text-slate-300">焦点</div>
+          <div class="grid grid-cols-4 gap-2.5 text-center">
+            <div v-for="stat in [
+              { label: '角色', value: nodes.length },
+              { label: '关系', value: edges.length },
+              { label: '阵营', value: groupCount },
+              { label: '焦点', value: selectedNode?.name?.slice(0, 4) },
+            ]" :key="stat.label"
+              class="rounded-xl border px-4 py-2"
+              :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
+              <div class="font-serif text-lg font-semibold truncate" :style="{ color: 'var(--text-primary)' }">{{ stat.value }}</div>
+              <div class="text-[11px]" :style="{ color: 'var(--text-muted)' }">{{ stat.label }}</div>
             </div>
           </div>
         </div>
       </div>
 
       <div class="grid min-h-0 grid-cols-[1fr_280px]">
-        <div class="relative overflow-hidden">
-          <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_22%_70%,rgba(168,85,247,0.18),transparent_30%)]"></div>
-          <svg viewBox="0 0 860 520" class="relative h-full w-full">
-            <defs>
-              <filter id="nodeGlow" x="-60%" y="-60%" width="220%" height="220%">
-                <feGaussianBlur stdDeviation="6" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-
+        <div class="relative overflow-hidden" :style="{ backgroundColor: 'var(--bg-page)' }">
+          <svg viewBox="0 0 860 520" class="absolute inset-0 h-full w-full">
             <g>
               <line
                 v-for="edge in edges"
@@ -227,9 +219,9 @@ function edgeColor(type: GraphEdge['type']) {
                 :y2="edge.target.y"
                 :stroke="edgeColor(edge.type)"
                 :stroke-width="edge.strength"
-                :stroke-dasharray="edge.type === 'complex' ? '8 8' : undefined"
+                :stroke-dasharray="edge.type === 'complex' ? '7 7' : undefined"
                 stroke-linecap="round"
-                opacity="0.68"
+                opacity="0.55"
               />
               <text
                 v-for="edge in edges.slice(0, 8)"
@@ -237,8 +229,8 @@ function edgeColor(type: GraphEdge['type']) {
                 :x="(edge.source.x + edge.target.x) / 2"
                 :y="(edge.source.y + edge.target.y) / 2 - 7"
                 text-anchor="middle"
-                class="fill-slate-200 text-[10px]"
-                opacity="0.82"
+                class="text-[10px]"
+                :style="{ fill: 'var(--text-muted)' }"
               >
                 {{ edge.label }}
               </text>
@@ -254,24 +246,24 @@ function edgeColor(type: GraphEdge['type']) {
                 <circle
                   :cx="node.x"
                   :cy="node.y"
-                  :r="node.id === selectedNode?.id ? 38 : node.group === '核心' ? 34 : 28"
+                  :r="node.id === selectedNode?.id ? 38 : node.group === '核心' ? 33 : 27"
                   :fill="node.color"
-                  opacity="0.22"
-                  filter="url(#nodeGlow)"
+                  opacity="0.15"
                 />
                 <circle
                   :cx="node.x"
                   :cy="node.y"
                   :r="node.group === '核心' ? 27 : 23"
                   :fill="node.color"
-                  stroke="rgba(255,255,255,0.86)"
-                  :stroke-width="node.id === selectedNode?.id ? 3 : 1.5"
+                  :stroke="'var(--surface)'"
+                  :stroke-width="node.id === selectedNode?.id ? 3.5 : 2"
                 />
                 <text
                   :x="node.x"
                   :y="node.y + 5"
                   text-anchor="middle"
-                  class="select-none fill-white text-sm font-semibold"
+                  class="select-none text-sm font-semibold"
+                  fill="#fffdf8"
                 >
                   {{ node.name.slice(0, 2) }}
                 </text>
@@ -279,7 +271,8 @@ function edgeColor(type: GraphEdge['type']) {
                   :x="node.x"
                   :y="node.y + 43"
                   text-anchor="middle"
-                  class="select-none fill-slate-200 text-xs"
+                  class="select-none text-xs"
+                  :style="{ fill: 'var(--text-secondary)' }"
                 >
                   {{ node.name }}
                 </text>
@@ -288,44 +281,49 @@ function edgeColor(type: GraphEdge['type']) {
           </svg>
 
           <div class="absolute bottom-5 left-6 flex flex-wrap gap-2">
-            <span class="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">同盟 {{ relationStats.ally }}</span>
-            <span class="rounded-full border border-red-400/30 bg-red-400/10 px-3 py-1 text-xs text-red-200">敌对 {{ relationStats.rival }}</span>
-            <span class="rounded-full border border-blue-400/30 bg-blue-400/10 px-3 py-1 text-xs text-blue-200">引导 {{ relationStats.mentor }}</span>
-            <span class="rounded-full border border-purple-400/30 bg-purple-400/10 px-3 py-1 text-xs text-purple-200">复杂 {{ relationStats.complex }}</span>
+            <span class="rounded-full px-3 py-1 text-xs font-medium"
+              :style="{ backgroundColor: '#dde8d9', color: '#3e6b48' }">同盟 {{ relationStats.ally }}</span>
+            <span class="rounded-full px-3 py-1 text-xs font-medium"
+              :style="{ backgroundColor: '#f3dcd5', color: '#a0432c' }">敌对 {{ relationStats.rival }}</span>
+            <span class="rounded-full px-3 py-1 text-xs font-medium"
+              :style="{ backgroundColor: '#dce4ec', color: '#4a6785' }">引导 {{ relationStats.mentor }}</span>
+            <span class="rounded-full px-3 py-1 text-xs font-medium"
+              :style="{ backgroundColor: '#f0e6d2', color: '#8f6a2b' }">复杂 {{ relationStats.complex }}</span>
           </div>
         </div>
 
-        <aside class="border-l border-white/10 bg-white/[0.06] p-5">
+        <aside class="border-l p-5 overflow-y-auto" :style="{ borderLeftColor: 'var(--border-clr)', backgroundColor: 'var(--surface)' }">
           <div v-if="selectedNode" class="space-y-5">
             <div>
-              <div class="mb-3 h-16 w-16 rounded-2xl flex items-center justify-center text-2xl font-semibold shadow-lg"
-                :style="{ backgroundColor: selectedNode.color }">
+              <div class="mb-3 h-16 w-16 rounded-2xl flex items-center justify-center text-2xl font-serif font-semibold text-white"
+                :style="{ backgroundColor: selectedNode.color, color: '#fffdf8', boxShadow: 'var(--shadow-soft)' }">
                 {{ selectedNode.name.slice(0, 1) }}
               </div>
-              <h3 class="text-xl font-semibold">{{ selectedNode.name }}</h3>
-              <p class="mt-1 text-sm text-cyan-200">{{ selectedNode.role || selectedNode.group }}</p>
+              <h3 class="font-serif text-xl font-semibold" :style="{ color: 'var(--text-primary)' }">{{ selectedNode.name }}</h3>
+              <p class="mt-1 text-sm font-medium" :style="{ color: 'var(--brand-hover)' }">{{ selectedNode.role || selectedNode.group }}</p>
             </div>
 
             <div>
-              <div class="text-xs uppercase tracking-[0.16em] text-slate-400">人物设定</div>
-              <p class="mt-2 text-sm leading-6 text-slate-200">
+              <div class="text-[11px] uppercase font-semibold" :style="{ letterSpacing: '0.14em', color: 'var(--text-muted)' }">人物设定</div>
+              <p class="mt-2 text-sm leading-6" :style="{ color: 'var(--text-secondary)' }">
                 {{ selectedNode.bio || '暂无人物简介，可以在左侧角色列表中补充背景、目标和性格。' }}
               </p>
             </div>
 
             <div>
-              <div class="text-xs uppercase tracking-[0.16em] text-slate-400">关系摘要</div>
+              <div class="text-[11px] uppercase font-semibold" :style="{ letterSpacing: '0.14em', color: 'var(--text-muted)' }">关系摘要</div>
               <div class="mt-3 space-y-2">
                 <div
                   v-for="edge in edges.filter((item) => item.source.id === selectedNode?.id || item.target.id === selectedNode?.id)"
                   :key="edge.id"
-                  class="rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+                  class="rounded-xl border px-3 py-2"
+                  :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"
                 >
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm">
+                    <span class="text-sm" :style="{ color: 'var(--text-primary)' }">
                       {{ edge.source.id === selectedNode.id ? edge.target.name : edge.source.name }}
                     </span>
-                    <span class="text-xs" :style="{ color: edgeColor(edge.type) }">{{ edge.label }}</span>
+                    <span class="text-xs font-medium" :style="{ color: edgeColor(edge.type) }">{{ edge.label }}</span>
                   </div>
                 </div>
               </div>

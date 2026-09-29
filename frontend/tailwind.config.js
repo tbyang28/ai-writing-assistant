@@ -8,18 +8,21 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Claude 橙（claude.ai 品牌色 #D97757 为基准的完整色阶）
         brand: {
-          DEFAULT: '#6366f1',
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
+          DEFAULT: '#D97757',
+          50: '#FBF0EA',
+          100: '#F6E1D4',
+          200: '#EDC3AE',
+          300: '#E2A184',
+          400: '#DD8465',
+          500: '#D97757',
+          600: '#CB6242',
+          700: '#A94F33',
+          800: '#874027',
+          900: '#6E341F',
         },
-        'ai-primary': '#6366f1',
+        'ai-primary': '#D97757',
         'surface': {
           DEFAULT: 'var(--surface)',
           secondary: 'var(--surface-secondary)',
@@ -31,12 +34,16 @@ export default {
           muted: 'var(--text-muted)',
         },
         'border': 'var(--border-clr)',
-        'danger': '#ef4444',
-        'success': '#22c55e',
+        'danger': '#C0432F',
+        'success': '#3E7A58',
       },
       fontFamily: {
+        // Claude 风格：正文/UI 用 sans，标题与正文写作区用 serif（宋体感）
         sans: ['"Inter"', '"Noto Sans SC"', 'system-ui', 'sans-serif'],
-        serif: ['"Noto Serif SC"', 'Georgia', 'serif'],
+        serif: ['"Newsreader"', '"Noto Serif SC"', 'Georgia', 'serif'],
+      },
+      borderRadius: {
+        'claude': '0.75rem',
       },
     },
   },
