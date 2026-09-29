@@ -54,10 +54,18 @@ const cur = { x: 0, y: 0 }
 const mouse = { x: 0, y: 0 }
 const dotCur = { x: 0, y: 0 }
 const haloCur = { x: 0, y: 0 }
+// 光标小点的状态机：静止淡出 / 悬停变环 / 按下收缩
+let lastMoveTs = 0
+let dotScale = 1
+let dotOpacity = 0
+let haloScale = 1
+let isInteractiveHover = false
+let isPressing = false
 
 function onMove(e: MouseEvent) {
   mouse.x = e.clientX
   mouse.y = e.clientY
+  lastMoveTs = performance.now()
   const hero = heroRef.value
   if (hero) {
     const r = hero.getBoundingClientRect()
@@ -66,6 +74,12 @@ function onMove(e: MouseEvent) {
     target.x = ((e.clientX - r.left) / r.width - 0.5) * 2
     target.y = ((e.clientY - r.top) / r.height - 0.5) * 2
   }
+}
+
+function onOver(e: MouseEvent) {
+  const hit = (e.target as HTMLElement | null)?.closest?.('a, button, input, textarea, select, [data-cursor]')
+  isInteractiveHover = !!hit
+  dotRef.value?.classList.toggle('is-ring', isInteractiveHover)
 }
 
 function onScroll() {
@@ -88,15 +102,35 @@ function tick() {
   dotCur.y += (mouse.y - dotCur.y) * 0.4
   haloCur.x += (mouse.x - haloCur.x) * 0.11
   haloCur.y += (mouse.y - haloCur.y) * 0.11
-  if (dotRef.value) dotRef.value.style.transform = `translate3d(${dotCur.x - 4}px, ${dotCur.y - 4}px, 0)`
-  if (haloRef.value) haloRef.value.style.transform = `translate3d(${haloCur.x - 110}px, ${haloCur.y - 110}px, 0)`
+  // 状态插值：静止 1.6s 后两者淡出消失；交互态小点放大成环、光晕收拢
+  const idle = performance.now() - lastMoveTs > 1600
+  const scaleTarget = isPressing ? 0.7 : isInteractiveHover ? 3 : 1
+  const opacityTarget = idle ? 0 : 1
+  const haloScaleTarget = isPressing ? 0.8 : isInteractiveHover ? 0.75 : 1
+  dotScale += (scaleTarget - dotScale) * 0.18
+  haloScale += (haloScaleTarget - haloScale) * 0.18
+  dotOpacity += (opacityTarget - dotOpacity) * 0.12
+  if (dotRef.value) {
+    dotRef.value.style.transform = `translate3d(${dotCur.x - 4}px, ${dotCur.y - 4}px, 0) scale(${dotScale})`
+    dotRef.value.style.opacity = String(dotOpacity)
+  }
+  if (haloRef.value) {
+    haloRef.value.style.transform = `translate3d(${haloCur.x - 110}px, ${haloCur.y - 110}px, 0) scale(${haloScale})`
+    haloRef.value.style.opacity = String(dotOpacity)
+  }
   raf = requestAnimationFrame(tick)
 }
+
+const onPress = () => { isPressing = true }
+const onRelease = () => { isPressing = false }
 
 onMounted(() => {
   scrollerRef.value?.addEventListener('scroll', onScroll, { passive: true })
   if (!fxOn) return
   window.addEventListener('mousemove', onMove, { passive: true })
+  window.addEventListener('mouseover', onOver, { passive: true })
+  window.addEventListener('mousedown', onPress, { passive: true })
+  window.addEventListener('mouseup', onRelease, { passive: true })
   raf = requestAnimationFrame(tick)
 })
 
@@ -104,6 +138,9 @@ onBeforeUnmount(() => {
   scrollerRef.value?.removeEventListener('scroll', onScroll)
   if (!fxOn) return
   window.removeEventListener('mousemove', onMove)
+  window.removeEventListener('mouseover', onOver)
+  window.removeEventListener('mousedown', onPress)
+  window.removeEventListener('mouseup', onRelease)
   cancelAnimationFrame(raf)
 })
 </script>

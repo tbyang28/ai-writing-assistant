@@ -233,11 +233,20 @@
   left: 0;
   width: 8px;
   height: 8px;
+  box-sizing: border-box;
   border-radius: 9999px;
   background: var(--brand);
+  border: 1.5px solid transparent;
   pointer-events: none;
   z-index: 60;
+  opacity: 0;
   transform: translate3d(-50%, -50%, 0);
+  transition: background-color 0.2s ease-out, border-color 0.2s ease-out;
+}
+/* 悬停可交互元素时：实心点变成细环（scale 由脚本控制） */
+.cursor-dot.is-ring {
+  background: transparent;
+  border-color: var(--brand);
 }
 .cursor-halo {
   position: fixed;
@@ -249,6 +258,7 @@
   background: radial-gradient(circle, rgba(217, 119, 87, 0.1) 0%, transparent 65%);
   pointer-events: none;
   z-index: 59;
+  opacity: 0;
   transform: translate3d(-50%, -50%, 0);
 }
 .dark .cursor-halo {
