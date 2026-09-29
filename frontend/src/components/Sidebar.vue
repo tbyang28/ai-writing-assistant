@@ -1,17 +1,42 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { useBookStore } from '@/stores/book'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
+const bookStore = useBookStore()
 
 const navItems = computed(() => [
-  { path: '/home', label: '我的作品', active: route.path === '/home' },
+  {
+    path: '/home',
+    label: '工作台',
+    active: route.path === '/home',
+  },
+  {
+    path: '/books',
+    label: '我的作品',
+    active: route.path === '/books' || route.path.startsWith('/editor'),
+  },
 ])
+
+const recentBooks = computed(() => bookStore.books.slice(0, 4))
+
+onMounted(() => {
+  if (!bookStore.books.length) {
+    bookStore.fetchBooks().catch(() => {})
+  }
+})
+
+function formatWordCount(count?: number | null) {
+  if (!count) return '0'
+  if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
+  return String(count)
+}
 
 async function handleLogout() {
   authStore.logout()
@@ -38,7 +63,7 @@ async function handleLogout() {
     </div>
 
     <!-- Nav -->
-    <nav class="flex-1 py-4 px-2.5 space-y-1">
+    <nav class="py-4 px-2.5 space-y-1">
       <router-link
         v-for="item in navItems"
         :key="item.path"
@@ -49,12 +74,40 @@ async function handleLogout() {
           ? { backgroundColor: 'var(--brand-soft)', color: 'var(--brand-hover)' }
           : { color: 'var(--text-secondary)' }"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg v-if="item.path === '/home'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
         </svg>
         <span class="hidden lg:inline">{{ item.label }}</span>
       </router-link>
     </nav>
+
+    <!-- 最近作品快捷列表 -->
+    <div class="hidden lg:block flex-1 min-h-0 overflow-y-auto px-2.5 pb-3">
+      <div class="px-3 pb-2 text-[11px] font-semibold uppercase" :style="{ letterSpacing: '0.14em', color: 'var(--text-muted)' }">
+        最近作品
+      </div>
+      <div class="space-y-0.5">
+        <button
+          v-for="book in recentBooks"
+          :key="book.id"
+          @click="router.push(`/editor/${book.id}`)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors duration-150 hover:bg-[var(--surface-hover)]"
+        >
+          <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-brand opacity-70"></span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-[13px] font-medium" :style="{ color: 'var(--text-primary)' }">{{ book.title }}</span>
+            <span class="block text-[11px]" :style="{ color: 'var(--text-muted)' }">{{ formatWordCount(book.word_count) }} 字</span>
+          </span>
+        </button>
+        <div v-if="!recentBooks.length" class="px-3 py-2 text-xs" :style="{ color: 'var(--text-muted)' }">
+          还没有作品
+        </div>
+      </div>
+    </div>
 
     <!-- User & Theme Toggle -->
     <div class="border-t p-3 space-y-1"

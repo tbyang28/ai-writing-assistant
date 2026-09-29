@@ -376,7 +376,7 @@ function stopDrag() {
       <!-- Book info -->
       <div class="p-3.5 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
         <div class="flex items-center justify-between">
-          <button @click="router.push('/home')"
+          <button @click="router.push('/books')"
             class="flex items-center gap-1.5 text-xs rounded-lg px-1.5 py-1 -ml-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]"
             :style="{ color: 'var(--text-muted)' }">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
