@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useBookStore, type Book } from '@/stores/book'
 import { useCountUp } from '@/composables/useCountUp'
+import { vSpotlight } from '@/composables/useCursorFx'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -180,6 +181,7 @@ function formatDateLabel(dateText: string) {
                 { label: '章节沉淀', value: animTotalChapters },
                 { label: '连续创作', value: `${animStreakDays} 天` },
               ]" :key="stat.label"
+                v-spotlight
                 class="card px-5 py-4 animate-fade-up"
                 :class="`stagger-${i + 1}`">
                 <div class="font-serif text-3xl font-semibold" :style="{ color: 'var(--text-primary)' }">{{ stat.value }}</div>
@@ -219,6 +221,7 @@ function formatDateLabel(dateText: string) {
 
               <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div v-for="(item, i) in quickTools" :key="item.title"
+                  v-spotlight
                   class="card p-4 hover-lift animate-fade-up"
                   :class="`stagger-${i + 1}`">
                   <div class="h-9 w-9 rounded-lg flex items-center justify-center font-serif text-sm font-semibold"
@@ -241,6 +244,7 @@ function formatDateLabel(dateText: string) {
 
                 <div v-if="recentBooks.length" class="mt-4 grid gap-3 md:grid-cols-2">
                   <div v-for="book in recentBooks" :key="book.id" @click="openBook(book)"
+                    v-spotlight
                     class="group cursor-pointer rounded-xl border p-4 transition-all duration-150 hover:border-brand"
                     :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface)' }">
                     <div class="flex items-start justify-between gap-3">

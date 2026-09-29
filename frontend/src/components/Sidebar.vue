@@ -10,7 +10,7 @@ const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
 const navItems = computed(() => [
-  { path: '/', label: '我的作品', active: route.path === '/' },
+  { path: '/home', label: '我的作品', active: route.path === '/home' },
 ])
 
 async function handleLogout() {

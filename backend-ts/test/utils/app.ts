@@ -34,7 +34,9 @@ export const llmCalls: LlmCallOptions[] = [];
 
 export async function buildTestApp(llm: FakeLlmOverrides = {}): Promise<INestApplication> {
   const record = (options: LlmCallOptions) => {
-    llmCalls.push(options);
+    // 记录快照：agent 循环会在调用后继续往原数组 push 消息，不拷贝的话
+    // llmCalls[0].messages 会被后续轮次污染（看到的是循环结束时的最终状态）
+    llmCalls.push({ ...options, messages: options.messages.map((m) => ({ ...m })) });
   };
   const fake: LlmClient = {
     chat:

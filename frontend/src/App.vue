@@ -6,7 +6,7 @@ import { useThemeStore } from '@/stores/theme'
 
 const route = useRoute()
 const themeStore = useThemeStore()
-const showSidebar = computed(() => route.path !== '/auth')
+const showSidebar = computed(() => route.path !== '/auth' && route.path !== '/')
 
 onMounted(() => {
   themeStore.init()

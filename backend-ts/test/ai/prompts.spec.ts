@@ -7,9 +7,10 @@ import {
   buildMessages,
 } from '../../src/ai/prompts';
 
-describe('SYSTEM_PROMPTS（逐字移植 ai_service.py）', () => {
-  it('包含全部 8 个人格键', () => {
+describe('SYSTEM_PROMPTS（逐字移植 ai_service.py + agent 新增）', () => {
+  it('包含全部 9 个人格键（移植 8 个 + agent）', () => {
     expect(Object.keys(SYSTEM_PROMPTS).sort()).toEqual([
+      'agent',
       'chat',
       'continue',
       'extract_characters',

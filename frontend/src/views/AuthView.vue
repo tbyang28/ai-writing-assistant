@@ -28,7 +28,7 @@ async function handleSubmit() {
     } else {
       await authStore.register(email.value, password.value, name.value || undefined)
     }
-    router.push('/')
+    router.push('/home')
   } catch (err: any) {
     errorMsg.value = err?.response?.data?.detail || err?.message || '操作失败，请重试'
   } finally {

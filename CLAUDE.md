@@ -34,6 +34,12 @@
 - 续写/聊天/润色时自动拼装：作品信息 + 人物设定 + 大纲 + 最近前 3 章 + RAG 检索 + 当前草稿
 - polish-diff 用更紧的上下文预算变体（不含 RAG）
 
+### 🤖 写作 Agent（工具调用循环）
+- `src/ai/agent/`：AgentService（循环）+ StoryToolsService（4 个只读工具：search_story / get_characters / get_outline / get_recent_chapters）
+- 初始上下文只带作品名/简介，人物/大纲/前文由模型按需调工具取（区别于 story-memory 的预拼装）
+- 轮内用非流式 chat + OpenAI 兼容 function calling（tools/tool_calls 已由 LlmClient 接口支持）；最多 4 轮，死循环后摘工具表收官
+- 工具异常/未知工具/坏 JSON 参数统一转为 ok:false 文本喂回模型，不中断循环
+
 ### 🔐 用户认证
 - JWT Token 认证（HS256，payload `{sub, exp}`）
 - bcrypt 密码加密（兼容 Python 版 `$2b$` 哈希，数据可直接迁移）
@@ -190,6 +196,8 @@ ai-writing-assistant/
 | POST | `/api/ai/polish-diff/stream` | Diff 润色（流式，meta→token→result→done） |
 | POST | `/api/ai/extract-characters` | 人物抽取（坏 JSON → 502） |
 | POST | `/api/ai/outline` | 生成大纲 |
+| POST | `/api/ai/agent` | 写作 Agent（工具调用循环，非流式） |
+| POST | `/api/ai/agent/stream` | 写作 Agent（流式，step→tool_call→tool_result→token→done→[DONE]） |
 
 **SSE 协议**：`data: {"type":"token","data":{"text":...}}` → `done` → 字面量 `data: [DONE]`；错误以 in-band `{"type":"error"}` 传递（HTTP 仍 200）；响应头含 `X-Accel-Buffering: no`。
 
