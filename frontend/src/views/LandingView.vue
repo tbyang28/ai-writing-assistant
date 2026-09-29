@@ -157,8 +157,8 @@ onBeforeUnmount(() => {
       <div ref="dotRef" class="cursor-dot" style="transform: translate3d(-4px, -4px, 0)"></div>
     </template>
     <!-- 顶部导航 -->
-    <nav class="sticky top-0 z-40 backdrop-blur-md border-b"
-      :style="{ backgroundColor: 'color-mix(in srgb, var(--bg-page) 82%, transparent)', borderBottomColor: 'var(--border-clr)' }">
+    <nav class="sticky top-0 z-40 backdrop-blur-md"
+      :style="{ backgroundColor: 'color-mix(in srgb, var(--bg-page) 82%, transparent)' }">
       <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <div class="h-7 w-7 rounded-lg flex items-center justify-center bg-brand">
@@ -175,12 +175,12 @@ onBeforeUnmount(() => {
       </div>
     </nav>
 
-    <!-- Hero -->
-    <section ref="heroRef" class="relative max-w-6xl mx-auto px-6 pt-16 pb-20 lg:pt-24">
+    <!-- Hero（光晕/装饰全宽，不被内容容器截断） -->
+    <section ref="heroRef" class="relative">
       <div class="hero-glow absolute inset-0 pointer-events-none"></div>
       <div ref="decorRef" class="absolute top-0 right-0 h-96 w-96 rounded-full opacity-50 pointer-events-none will-change-transform"
         :style="{ background: 'radial-gradient(circle, var(--brand-soft) 0%, transparent 68%)' }"></div>
-
+      <div class="relative max-w-6xl mx-auto px-6 pt-16 pb-20 lg:pt-24">
       <div class="relative grid lg:grid-cols-[1.05fr_0.95fr] gap-12 items-center">
         <div>
           <div class="animate-fade-up inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium"
@@ -247,10 +247,11 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+      </div>
     </section>
 
     <!-- 功能矩阵 -->
-    <section class="border-t" :style="{ borderTopColor: 'var(--border-clr)', backgroundColor: 'var(--surface)' }">
+    <section>
       <div class="max-w-6xl mx-auto px-6 py-20">
         <div v-reveal class="max-w-2xl">
           <div class="eyebrow">Features</div>
@@ -276,7 +277,7 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- 三步工作流 -->
-    <section class="border-t" :style="{ borderTopColor: 'var(--border-clr)' }">
+    <section>
       <div class="max-w-6xl mx-auto px-6 py-20">
         <div v-reveal class="max-w-2xl">
           <div class="eyebrow">Workflow</div>
@@ -297,7 +298,7 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- 收尾 CTA -->
-    <section class="border-t" :style="{ borderTopColor: 'var(--border-clr)', backgroundColor: 'var(--surface)' }">
+    <section>
       <div v-reveal class="max-w-6xl mx-auto px-6 py-24 text-center">
         <h2 class="font-serif text-3xl md:text-[2.6rem] leading-snug font-semibold">
           现在开始你的<span :style="{ color: 'var(--brand-hover)' }">下一章</span>。
@@ -314,7 +315,7 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- Footer -->
-    <footer class="border-t" :style="{ borderTopColor: 'var(--border-clr)' }">
+    <footer>
       <div class="max-w-6xl mx-auto px-6 py-8 flex flex-wrap items-center justify-between gap-3 text-xs"
         :style="{ color: 'var(--text-muted)' }">
         <span class="font-serif">AI 写作助手 · Writing Workspace</span>
