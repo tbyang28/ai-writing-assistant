@@ -223,4 +223,28 @@ describe('inspirations', () => {
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ detail: '作品不存在' });
   });
+
+  it('GET /api/inspirations：跨书聚合，只含本人作品且附 book_title', async () => {
+    const { alice, bob, bookId } = await setup();
+    await request(app.getHttpServer())
+      .post(`/api/books/${bookId}/inspirations`)
+      .set(alice.auth)
+      .send({ title: '我的灵感', content: 'x', tags: ['悬疑'] });
+    // bob 的书里放一条，绝不应出现在 alice 的聚合里
+    const bobBook = await request(app.getHttpServer())
+      .post('/api/books')
+      .set(bob.auth)
+      .send({ title: 'Bob 的书' });
+    await request(app.getHttpServer())
+      .post(`/api/books/${bobBook.body.id}/inspirations`)
+      .set(bob.auth)
+      .send({ title: 'bob 的灵感', content: 'x' });
+
+    const res = await request(app.getHttpServer()).get('/api/inspirations').set(alice.auth);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].title).toBe('我的灵感');
+    expect(res.body[0].book_title).toBeTruthy();
+    expect(JSON.parse(res.body[0].tags)).toEqual(['悬疑']);
+  });
 });

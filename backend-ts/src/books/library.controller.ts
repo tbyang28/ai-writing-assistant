@@ -221,6 +221,25 @@ export class LibraryController {
 
   // ===================== Inspirations =====================
 
+  /**
+   * 跨书灵感聚合（新增端点，前端灵感库页面用）。
+   * 只返回当前登录用户名下书籍的灵感，附 book_title 便于展示来源。
+   * 注册在 books/:bookId/... 之前，避免路径歧义。
+   */
+  @Get('inspirations')
+  async listAllInspirations(@CurrentUser() user: User) {
+    const rows = await this.db
+      .select({ inspiration: inspirations, bookTitle: books.title })
+      .from(inspirations)
+      .innerJoin(books, eq(inspirations.bookId, books.id))
+      .where(eq(books.ownerId, user.id))
+      .orderBy(desc(inspirations.createdAt), desc(inspirations.id));
+    return rows.map((r) => ({
+      ...toInspirationResponse(r.inspiration),
+      book_title: r.bookTitle,
+    }));
+  }
+
   @Get('books/:bookId/inspirations')
   async listInspirations(
     @Param('bookId', new ParseUuidOr404Pipe('作品不存在')) _bookId: string,

@@ -15,12 +15,26 @@ const navItems = computed(() => [
   {
     path: '/home',
     label: '工作台',
+    icon: 'home',
     active: route.path === '/home',
   },
   {
     path: '/books',
     label: '我的作品',
+    icon: 'book',
     active: route.path === '/books' || route.path.startsWith('/editor'),
+  },
+  {
+    path: '/inspirations',
+    label: '灵感库',
+    icon: 'sparkle',
+    active: route.path === '/inspirations',
+  },
+  {
+    path: '/stats',
+    label: '写作统计',
+    icon: 'chart',
+    active: route.path === '/stats',
   },
 ])
 
@@ -74,12 +88,20 @@ async function handleLogout() {
           ? { backgroundColor: 'var(--brand-soft)', color: 'var(--brand-hover)' }
           : { color: 'var(--text-secondary)' }"
       >
-        <svg v-if="item.path === '/home'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg v-if="item.icon === 'home'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
           <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
-        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg v-else-if="item.icon === 'book'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+        </svg>
+        <svg v-else-if="item.icon === 'sparkle'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l1.9 5.7a2 2 0 0 0 1.4 1.4L21 12l-5.7 1.9a2 2 0 0 0-1.4 1.4L12 21l-1.9-5.7a2 2 0 0 0-1.4-1.4L3 12l5.7-1.9a2 2 0 0 0 1.4-1.4L12 3z" />
+        </svg>
+        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" x2="18" y1="20" y2="10" />
+          <line x1="12" x2="12" y1="20" y2="4" />
+          <line x1="6" x2="6" y1="20" y2="14" />
         </svg>
         <span class="hidden lg:inline">{{ item.label }}</span>
       </router-link>

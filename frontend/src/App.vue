@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useRoute, RouterView } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
 import { useThemeStore } from '@/stores/theme'
 
 const route = useRoute()
@@ -25,5 +26,6 @@ onMounted(() => {
         </RouterView>
       </main>
     </div>
+    <CommandPalette v-if="showSidebar" />
   </div>
 </template>
