@@ -1,24 +1,5 @@
 services:
-  backend:
-    build:
-      context: ./backend
-    container_name: ai-writing-backend
-    environment:
-      # 旧 Python 参考服务专用；主后端使用下方 PostgreSQL DATABASE_URL。
-      DATABASE_URL: ${PYTHON_DATABASE_URL:-sqlite+aiosqlite:////app/data/writing_platform.db}
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
-      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
-      SILICONFLOW_BASE_URL: ${SILICONFLOW_BASE_URL:-https://api.siliconflow.cn/v1}
-      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-ai/DeepSeek-V4-Flash}
-    volumes:
-      - backend-data:/app/data
-    ports:
-      - "8000:8000"
-    restart: unless-stopped
-
-  # ---- NestJS 后端（Phase 7 起作为主后端；Python 版保留为参考实现）----
+  # ---- NestJS 后端（唯一后端）----
   backend-ts:
     build:
       context: ./backend-ts
@@ -95,5 +76,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  backend-data:
   postgres-data:

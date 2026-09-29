@@ -6,6 +6,7 @@ type UndiciResponse = Dispatcher.ResponseData<null>;
 
 import {
   LlmHttpError,
+  type ChatMessage,
   type LlmCallOptions,
   type LlmClient,
   type LlmResult,
@@ -55,13 +56,19 @@ export class SiliconFlowClient implements LlmClient, OnModuleDestroy {
   }
 
   private buildBody(options: LlmCallOptions, stream: boolean): string {
-    return JSON.stringify({
+    const body: Record<string, unknown> = {
       model: options.model ?? this.defaultModel(),
-      messages: options.messages,
+      messages: options.messages.map(serializeMessage),
       stream,
       max_tokens: options.maxTokens ?? 4096,
       temperature: options.temperature ?? 0.7,
-    });
+    };
+    if (options.tools?.length) {
+      // OpenAI 兼容 function calling：tools=[{type:'function', function:{...}}]
+      body.tools = options.tools.map((t) => ({ type: 'function', function: t }));
+      body.tool_choice = 'auto';
+    }
+    return JSON.stringify(body);
   }
 
   private post(path: string, body: string, signal?: AbortSignal): Promise<UndiciResponse> {
@@ -101,9 +108,20 @@ export class SiliconFlowClient implements LlmClient, OnModuleDestroy {
         throw await SiliconFlowClient.httpError(res);
       }
       const data = (await res.body.json()) as {
-        choices: Array<{ message: { content: string } }>;
+        choices: Array<{
+          message: {
+            content: string | null;
+            tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: unknown } }>;
+          };
+        }>;
       };
-      return { answer: data.choices[0].message.content };
+      const message = data.choices[0].message;
+      const toolCalls = (message.tool_calls ?? []).map((tc) => ({
+        id: tc.id ?? '',
+        name: tc.function?.name ?? '',
+        argumentsJson: typeof tc.function?.arguments === 'string' ? tc.function.arguments : '{}',
+      }));
+      return { answer: message.content ?? '', toolCalls };
     });
   }
 
@@ -180,4 +198,27 @@ export class SiliconFlowClient implements LlmClient, OnModuleDestroy {
     }
     throw lastError;
   }
+}
+
+/**
+ * ChatMessage → OpenAI 兼容消息：
+ * assistant 携带 tool_calls 时 content 需为 null（很多上游对空串 content 报错）；
+ * role:'tool' 的结果消息必须带 tool_call_id。
+ */
+function serializeMessage(msg: ChatMessage): Record<string, unknown> {
+  if (msg.role === 'tool') {
+    return { role: 'tool', tool_call_id: msg.toolCallId ?? '', content: msg.content };
+  }
+  if (msg.role === 'assistant' && msg.toolCalls?.length) {
+    return {
+      role: 'assistant',
+      content: msg.content || null,
+      tool_calls: msg.toolCalls.map((tc) => ({
+        id: tc.id,
+        type: 'function',
+        function: { name: tc.name, arguments: tc.argumentsJson },
+      })),
+    };
+  }
+  return { role: msg.role, content: msg.content };
 }

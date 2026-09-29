@@ -30,6 +30,7 @@ import {
   buildMessages,
 } from './prompts';
 import { POLISH_MEMORY_OPTIONS, StoryMemoryService } from './story-memory.service';
+import { AgentService, type AgentEvent } from './agent/agent.service';
 import { buildTextDiff, estimatePolishDiffMaxTokens, summarizeDiff } from './text-diff';
 import {
   aiChatSchema,
@@ -59,6 +60,7 @@ export class AiController {
     @Inject(DRIZZLE) private readonly db: Database,
     @Inject(LLM_CLIENT) private readonly llm: LlmClient,
     private readonly memory: StoryMemoryService,
+    private readonly agent: AgentService,
   ) {}
 
   // ===================== 非流式 =====================
@@ -192,6 +194,82 @@ export class AiController {
     } catch (e) {
       // Python 版此端点的兜底文案没有 _extract_ai_error，直接拼 str(e)
       throw new HttpException(`AI 服务调用失败: ${errMsg(e)}`, 500);
+    }
+  }
+
+  // ===================== Agent（工具调用循环） =====================
+
+  @Post('agent')
+  @HttpCode(200)
+  async agentChat(
+    @Body(new ZodValidationPipe(aiChatSchema)) data: AiChatInput,
+    @CurrentUser() user: User,
+  ) {
+    const book = await this.verifyBookAccess(data.book_id, user.id);
+    try {
+      const result = await this.agent.run({
+        book,
+        message: buildAgentMessage(data),
+        history: data.history ?? undefined,
+        model: data.model ?? undefined,
+      });
+      return { data: result };
+    } catch (e) {
+      throw internalAiError(e);
+    }
+  }
+
+  @Post('agent/stream')
+  async agentChatStream(
+    @Body(new ZodValidationPipe(aiChatSchema)) data: AiChatInput,
+    @CurrentUser() user: User,
+    @Res() res: Response,
+  ) {
+    const book = await this.verifyBookAccess(data.book_id, user.id);
+    const abort = this.startSse(res);
+    try {
+      await this.agent.run({
+        book,
+        message: buildAgentMessage(data),
+        history: data.history ?? undefined,
+        model: data.model ?? undefined,
+        signal: abort.signal,
+        emit: (event) => this.writeAgentEvent(res, event),
+      });
+      this.finishSse(res);
+    } catch (e) {
+      this.writeErrorSafely(res, abort, e);
+    }
+    res.end();
+  }
+
+  /** AgentEvent → SSE 帧（token 帧格式与 chat/stream 一致，前端可直接复用渲染） */
+  private writeAgentEvent(res: Response, event: AgentEvent): void {
+    if (res.destroyed || res.writableEnded) {
+      return;
+    }
+    switch (event.type) {
+      case 'step':
+        this.writeSse(res, {
+          type: 'step',
+          data: { round: event.round, thought: event.thought },
+        });
+        break;
+      case 'tool_call':
+        this.writeSse(res, {
+          type: 'tool_call',
+          data: { round: event.round, name: event.name, args: event.args },
+        });
+        break;
+      case 'tool_result':
+        this.writeSse(res, {
+          type: 'tool_result',
+          data: { round: event.round, name: event.name, ok: event.ok, content: event.preview },
+        });
+        break;
+      case 'token':
+        this.writeSse(res, { type: 'token', data: { text: event.text } });
+        break;
     }
   }
 
@@ -476,4 +554,18 @@ function internalAiError(e: unknown): HttpException {
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * agent 端点的用户消息：只带「当前草稿 + 问题」这类即时上下文；
+ * 作品的长时记忆（人物/大纲/前文）交给模型用工具自取。
+ */
+function buildAgentMessage(data: AiChatInput): string {
+  const parts: string[] = [];
+  const draft = (data.current_content ?? '').trim();
+  if (draft) {
+    parts.push(`【当前章节草稿】\n${codePointSlice(draft, 0, 800)}`);
+  }
+  parts.push(`【用户问题】\n${data.message}`);
+  return parts.join('\n\n');
 }

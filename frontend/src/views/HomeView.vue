@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useBookStore, type Book } from '@/stores/book'
+import { useCountUp } from '@/composables/useCountUp'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -21,6 +22,12 @@ const totalChapters = computed(() => bookStore.stats?.totalChapters || 0)
 const totalWords = computed(() => bookStore.stats?.totalWords || 0)
 const todayWords = computed(() => bookStore.writingStats?.today_word_count || 0)
 const streakDays = computed(() => bookStore.writingStats?.streak_days || 0)
+
+// 统计数字滚动动画
+const animTotalBooks = useCountUp(() => bookStore.stats?.totalBooks || 0)
+const animTotalWords = useCountUp(() => totalWords.value)
+const animTotalChapters = useCountUp(() => totalChapters.value)
+const animStreakDays = useCountUp(() => streakDays.value)
 const recentBooks = computed(() => bookStore.books.slice(0, 4))
 const latestBook = computed(() => bookStore.books[0] || null)
 const chartDays = computed(() => bookStore.writingStats?.last_7_days || [])
@@ -129,7 +136,7 @@ function formatDateLabel(dateText: string) {
 
         <template v-else>
           <!-- 问候区：Claude 式大衬线标题 -->
-          <header class="pt-4 pb-2">
+          <header class="pt-4 pb-2 animate-fade-up">
             <div class="eyebrow flex items-center gap-2">
               <span class="h-1.5 w-1.5 rounded-full bg-brand inline-block"></span>
               Writing Workspace
@@ -167,19 +174,20 @@ function formatDateLabel(dateText: string) {
           <!-- 统计 + 趋势 -->
           <section class="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
             <div class="grid grid-cols-2 gap-4">
-              <div v-for="stat in [
-                { label: '作品总数', value: bookStore.stats?.totalBooks || 0 },
-                { label: '累计字数', value: formatWordCount(totalWords) },
-                { label: '章节沉淀', value: totalChapters },
-                { label: '连续创作', value: `${streakDays} 天` },
+              <div v-for="(stat, i) in [
+                { label: '作品总数', value: animTotalBooks },
+                { label: '累计字数', value: formatWordCount(animTotalWords) },
+                { label: '章节沉淀', value: animTotalChapters },
+                { label: '连续创作', value: `${animStreakDays} 天` },
               ]" :key="stat.label"
-                class="card px-5 py-4">
+                class="card px-5 py-4 animate-fade-up"
+                :class="`stagger-${i + 1}`">
                 <div class="font-serif text-3xl font-semibold" :style="{ color: 'var(--text-primary)' }">{{ stat.value }}</div>
                 <div class="mt-1 text-xs" :style="{ color: 'var(--text-muted)' }">{{ stat.label }}</div>
               </div>
             </div>
 
-            <div class="card p-5">
+            <div class="card p-5 animate-fade-up stagger-2">
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <h2 class="text-base font-semibold" :style="{ color: 'var(--text-primary)' }">本周写作趋势</h2>
@@ -191,10 +199,10 @@ function formatDateLabel(dateText: string) {
                 </div>
               </div>
               <div class="mt-5 h-40 flex items-end gap-2.5">
-                <div v-for="day in chartDays" :key="day.date" class="flex-1 flex flex-col items-center gap-2">
-                  <div class="w-full rounded-t-md bg-brand transition-all min-h-[6px]"
+                <div v-for="(day, i) in chartDays" :key="day.date" class="flex-1 flex flex-col items-center gap-2">
+                  <div class="w-full rounded-t-md bg-brand min-h-[6px] animate-bar-grow"
                     :class="(day.wordCount || 0) > 0 ? 'opacity-100' : 'opacity-25'"
-                    :style="{ height: `${Math.max(6, ((day.wordCount || 0) / maxChartWords) * 124)}px` }"></div>
+                    :style="{ height: `${Math.max(6, ((day.wordCount || 0) / maxChartWords) * 124)}px`, animationDelay: `${i * 60}ms` }"></div>
                   <div class="text-[11px]" :style="{ color: 'var(--text-muted)' }">{{ formatDateLabel(day.date) }}</div>
                 </div>
               </div>
@@ -210,9 +218,9 @@ function formatDateLabel(dateText: string) {
               </div>
 
               <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div v-for="item in quickTools" :key="item.title"
-                  class="card p-4 transition-all duration-150 hover:-translate-y-0.5"
-                  :style="{ '--shadow-hover': 'var(--shadow-lift)' }">
+                <div v-for="(item, i) in quickTools" :key="item.title"
+                  class="card p-4 hover-lift animate-fade-up"
+                  :class="`stagger-${i + 1}`">
                   <div class="h-9 w-9 rounded-lg flex items-center justify-center font-serif text-sm font-semibold"
                     :style="{ backgroundColor: 'var(--brand-soft)', color: 'var(--brand-hover)' }">
                     {{ item.metric }}
@@ -222,7 +230,7 @@ function formatDateLabel(dateText: string) {
                 </div>
               </div>
 
-              <div class="card p-5">
+              <div class="card p-5 animate-fade-up stagger-3">
                 <div class="flex items-center justify-between gap-3">
                   <div>
                     <h2 class="text-lg font-semibold" :style="{ color: 'var(--text-primary)' }">最近作品</h2>
@@ -274,7 +282,7 @@ function formatDateLabel(dateText: string) {
 
             <aside class="space-y-4">
               <!-- 人物关系概览：暖色调迷你图谱 -->
-              <div class="card overflow-hidden">
+              <div class="card overflow-hidden animate-fade-up stagger-3">
                 <div class="p-5 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
                   <div class="eyebrow">Story Map</div>
                   <h2 class="mt-2 font-serif text-lg font-semibold" :style="{ color: 'var(--text-primary)' }">人物关系概览</h2>
@@ -284,25 +292,33 @@ function formatDateLabel(dateText: string) {
                 </div>
                 <div class="relative h-64">
                   <svg viewBox="0 0 320 210" class="absolute inset-0 h-full w-full">
-                    <line x1="160" y1="104" x2="84" y2="62" stroke="#448a6a" stroke-width="2.5" opacity="0.75" />
-                    <line x1="160" y1="104" x2="246" y2="74" stroke="#c25344" stroke-width="2.5" opacity="0.75" />
-                    <line x1="160" y1="104" x2="98" y2="162" stroke="#64829f" stroke-width="2" opacity="0.75" />
-                    <line x1="160" y1="104" x2="232" y2="158" stroke="#c9974f" stroke-width="2" stroke-dasharray="6 6" opacity="0.75" />
-                    <circle cx="160" cy="104" r="26" fill="#d97757" :stroke="'var(--surface)'" stroke-width="2.5" />
-                    <circle cx="84" cy="62" r="20" fill="#448a6a" :stroke="'var(--surface)'" stroke-width="2.5" />
-                    <circle cx="246" cy="74" r="20" fill="#c25344" :stroke="'var(--surface)'" stroke-width="2.5" />
-                    <circle cx="98" cy="162" r="18" fill="#64829f" :stroke="'var(--surface)'" stroke-width="2.5" />
-                    <circle cx="232" cy="158" r="18" fill="#c9974f" :stroke="'var(--surface)'" stroke-width="2.5" />
-                    <text x="160" y="109" text-anchor="middle" fill="#fffdf8" font-size="11" font-weight="600">主角</text>
-                    <text x="84" y="66" text-anchor="middle" fill="#fffdf8" font-size="10" font-weight="600">同伴</text>
-                    <text x="246" y="78" text-anchor="middle" fill="#fffdf8" font-size="10" font-weight="600">反派</text>
-                    <text x="98" y="166" text-anchor="middle" fill="#fffdf8" font-size="10" font-weight="600">导师</text>
-                    <text x="232" y="162" text-anchor="middle" fill="#fffdf8" font-size="10" font-weight="600">伏笔</text>
+                    <line v-for="(edge, i) in [
+                      { x1: 160, y1: 104, x2: 84, y2: 62, stroke: '#448a6a', sw: 2.5 },
+                      { x1: 160, y1: 104, x2: 246, y2: 74, stroke: '#c25344', sw: 2.5 },
+                      { x1: 160, y1: 104, x2: 98, y2: 162, stroke: '#64829f', sw: 2 },
+                      { x1: 160, y1: 104, x2: 232, y2: 158, stroke: '#c9974f', sw: 2, dash: true },
+                    ]" :key="i"
+                      :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2"
+                      :stroke="edge.stroke" :stroke-width="edge.sw"
+                      :stroke-dasharray="edge.dash ? '6 6' : undefined" opacity="0.75"
+                      class="animate-fade-in" :style="{ animationDelay: `${i * 90}ms` }" />
+                    <g v-for="(n, i) in [
+                      { x: 160, y: 104, r: 26, fill: '#d97757', label: '主角', fs: 11, ty: 5 },
+                      { x: 84, y: 62, r: 20, fill: '#448a6a', label: '同伴', fs: 10, ty: 4 },
+                      { x: 246, y: 74, r: 20, fill: '#c25344', label: '反派', fs: 10, ty: 4 },
+                      { x: 98, y: 162, r: 18, fill: '#64829f', label: '导师', fs: 10, ty: 4 },
+                      { x: 232, y: 158, r: 18, fill: '#c9974f', label: '伏笔', fs: 10, ty: 4 },
+                    ]" :key="n.label"
+                      class="motion-ambient animate-float"
+                      :style="{ animationDelay: `${i * 0.9}s`, transformBox: 'fill-box', transformOrigin: 'center' }">
+                      <circle :cx="n.x" :cy="n.y" :r="n.r" :fill="n.fill" :stroke="'var(--surface)'" stroke-width="2.5" />
+                      <text :x="n.x" :y="n.y + n.ty" text-anchor="middle" fill="#fffdf8" :font-size="n.fs" font-weight="600">{{ n.label }}</text>
+                    </g>
                   </svg>
                 </div>
               </div>
 
-              <div class="card p-5">
+              <div class="card p-5 animate-fade-up stagger-4">
                 <h2 class="text-base font-semibold" :style="{ color: 'var(--text-primary)' }">今日写作建议</h2>
                 <div class="mt-4 space-y-3.5">
                   <div v-for="(tip, i) in [
@@ -323,8 +339,8 @@ function formatDateLabel(dateText: string) {
     </div>
 
     <!-- New Book Modal -->
-    <div v-if="showNewBookModal" class="modal-overlay" @click.self="showNewBookModal = false">
-      <div class="modal-content">
+    <div v-if="showNewBookModal" class="modal-overlay animate-fade-in" @click.self="showNewBookModal = false">
+      <div class="modal-content animate-pop-in">
         <h3 class="font-serif text-xl font-semibold mb-5" :style="{ color: 'var(--text-primary)' }">新建作品</h3>
         <div class="space-y-4">
           <div>

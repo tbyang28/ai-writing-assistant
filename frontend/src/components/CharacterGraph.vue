@@ -211,8 +211,10 @@ function edgeColor(type: GraphEdge['type']) {
           <svg viewBox="0 0 860 520" class="absolute inset-0 h-full w-full">
             <g>
               <line
-                v-for="edge in edges"
+                v-for="(edge, i) in edges"
                 :key="edge.id"
+                class="animate-fade-in"
+                :style="{ animationDelay: `${Math.min(i * 60, 600)}ms` }"
                 :x1="edge.source.x"
                 :y1="edge.source.y"
                 :x2="edge.target.x"
@@ -224,13 +226,13 @@ function edgeColor(type: GraphEdge['type']) {
                 opacity="0.55"
               />
               <text
-                v-for="edge in edges.slice(0, 8)"
+                v-for="(edge, i) in edges.slice(0, 8)"
                 :key="`${edge.id}-label`"
+                class="text-[10px] animate-fade-in"
+                :style="{ animationDelay: `${200 + i * 60}ms`, fill: 'var(--text-muted)' }"
                 :x="(edge.source.x + edge.target.x) / 2"
                 :y="(edge.source.y + edge.target.y) / 2 - 7"
                 text-anchor="middle"
-                class="text-[10px]"
-                :style="{ fill: 'var(--text-muted)' }"
               >
                 {{ edge.label }}
               </text>
@@ -238,11 +240,26 @@ function edgeColor(type: GraphEdge['type']) {
 
             <g>
               <g
-                v-for="node in nodes"
+                v-for="(node, i) in nodes"
                 :key="node.id"
-                class="cursor-pointer transition-opacity"
+                class="graph-node cursor-pointer"
                 @click="selectedNodeId = node.id"
               >
+                <circle
+                  v-if="node.id === selectedNode?.id"
+                  class="motion-ambient animate-pulse-ring"
+                  :cx="node.x"
+                  :cy="node.y"
+                  :r="node.group === '核心' ? 32 : 28"
+                  fill="none"
+                  :stroke="node.color"
+                  stroke-width="3"
+                  :style="{ transformBox: 'fill-box', transformOrigin: 'center' }"
+                />
+                <g
+                  class="motion-ambient node-float"
+                  :style="{ animationDelay: `${(i % 5) * 1.1}s`, transformBox: 'fill-box', transformOrigin: 'center' }"
+                >
                 <circle
                   :cx="node.x"
                   :cy="node.y"
@@ -276,6 +293,7 @@ function edgeColor(type: GraphEdge['type']) {
                 >
                   {{ node.name }}
                 </text>
+                </g>
               </g>
             </g>
           </svg>
@@ -334,3 +352,17 @@ function edgeColor(type: GraphEdge['type']) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.graph-node {
+  transition: transform 0.18s ease-out;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.graph-node:hover {
+  transform: scale(1.07);
+}
+.node-float {
+  animation: float-soft 6s ease-in-out infinite;
+}
+</style>

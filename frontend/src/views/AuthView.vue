@@ -46,7 +46,7 @@ async function handleSubmit() {
         <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full opacity-60"
           :style="{ background: 'radial-gradient(circle, var(--brand-soft) 0%, transparent 70%)' }"></div>
 
-        <div class="relative">
+        <div class="relative animate-fade-up">
           <div class="eyebrow flex items-center gap-2">
             <span class="h-1.5 w-1.5 rounded-full bg-brand inline-block"></span>
             AI Writing Assistant
@@ -61,11 +61,11 @@ async function handleSubmit() {
         </div>
 
         <div class="relative space-y-5 max-w-lg">
-          <div v-for="item in [
+          <div v-for="(item, i) in [
             { title: '上下文记忆', desc: '续写前自动检索相关章节与人物设定，减少长篇“写着写着忘了”。' },
             { title: 'Diff 润色审阅', desc: '先看 AI 改了什么，再决定是否写回正文。每一处修改都可追溯。' },
             { title: '人物关系图谱', desc: '沉淀角色、阵营与冲突，随时回看，保持几十章后的设定一致。' },
-          ]" :key="item.title" class="flex gap-4">
+          ]" :key="item.title" class="flex gap-4 animate-fade-up" :class="`stagger-${i + 2}`">
             <div class="mt-1.5 h-2 w-2 shrink-0 rounded-sm rotate-45 bg-brand"></div>
             <div>
               <div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">{{ item.title }}</div>
@@ -92,7 +92,7 @@ async function handleSubmit() {
             </h1>
           </div>
 
-          <div class="card p-8">
+          <div class="card p-8 animate-pop-in stagger-2">
             <h2 class="font-serif text-2xl font-semibold" :style="{ color: 'var(--text-primary)' }">
               {{ isLogin ? '欢迎回来' : '创建账号' }}
             </h2>

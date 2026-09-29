@@ -426,7 +426,7 @@ function stopDrag() {
         <div class="px-2 pb-2 space-y-0.5">
           <div v-for="ch in chapters" :key="ch.id"
             @click="selectChapter(ch.id)"
-            class="group flex items-start gap-2 px-2.5 py-2 cursor-pointer text-sm rounded-lg border-l-[3px] transition-colors duration-150"
+            class="group flex items-start gap-2 px-2.5 py-2 cursor-pointer text-sm rounded-lg border-l-[3px] transition-all duration-150 hover:translate-x-0.5"
             :style="activeChapterId === ch.id
               ? { borderLeftColor: 'var(--brand)', backgroundColor: 'var(--brand-soft)' }
               : { borderLeftColor: 'transparent' }"
@@ -606,7 +606,7 @@ function stopDrag() {
           ></textarea>
           <!-- AI Insert Undo Toast -->
           <div v-if="showAiUndo"
-            class="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm z-50"
+            class="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm z-50 animate-toast"
             :style="{ backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border-clr)', boxShadow: 'var(--shadow-lift)' }">
             <span>{{ aiUndoMessage }}</span>
             <button @click="undoAiInsert"
@@ -649,8 +649,8 @@ function stopDrag() {
     />
 
     <!-- Modals -->
-    <div v-if="showNewChapterModal" class="modal-overlay" @click.self="cancelNewChapter">
-      <div class="modal-content">
+    <div v-if="showNewChapterModal" class="modal-overlay animate-fade-in" @click.self="cancelNewChapter">
+      <div class="modal-content animate-pop-in">
         <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建章节</h3>
         <div class="mb-3 rounded-xl border px-3.5 py-2.5 text-sm"
           :style="{ color: 'var(--text-muted)', borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
@@ -666,8 +666,8 @@ function stopDrag() {
       </div>
     </div>
 
-    <div v-if="showNewOutlineModal" class="modal-overlay" @click.self="showNewOutlineModal = false">
-      <div class="modal-content">
+    <div v-if="showNewOutlineModal" class="modal-overlay animate-fade-in" @click.self="showNewOutlineModal = false">
+      <div class="modal-content animate-pop-in">
         <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建大纲</h3>
         <input v-model="newOutlineTitle" type="text" class="form-input" placeholder="大纲标题" @keyup.enter="createOutline" />
         <div class="flex justify-end gap-3 mt-5">
@@ -677,8 +677,8 @@ function stopDrag() {
       </div>
     </div>
 
-    <div v-if="showNewCharacterModal" class="modal-overlay" @click.self="showNewCharacterModal = false">
-      <div class="modal-content">
+    <div v-if="showNewCharacterModal" class="modal-overlay animate-fade-in" @click.self="showNewCharacterModal = false">
+      <div class="modal-content animate-pop-in">
         <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建角色</h3>
         <div class="space-y-3">
           <input v-model="newCharacterName" type="text" class="form-input" placeholder="角色名称" />
@@ -691,8 +691,8 @@ function stopDrag() {
       </div>
     </div>
 
-    <div v-if="showExtractCharactersModal" class="modal-overlay" @click.self="showExtractCharactersModal = false">
-      <div class="modal-content max-w-2xl">
+    <div v-if="showExtractCharactersModal" class="modal-overlay animate-fade-in" @click.self="showExtractCharactersModal = false">
+      <div class="modal-content max-w-2xl animate-pop-in">
         <div class="flex items-start justify-between gap-4 mb-4">
           <div>
             <h3 class="font-serif text-xl font-semibold" :style="{ color: 'var(--text-primary)' }">AI 识别到的人物</h3>
@@ -742,8 +742,8 @@ function stopDrag() {
       </div>
     </div>
 
-    <div v-if="showNewRelationModal" class="modal-overlay" @click.self="showNewRelationModal = false">
-      <div class="modal-content">
+    <div v-if="showNewRelationModal" class="modal-overlay animate-fade-in" @click.self="showNewRelationModal = false">
+      <div class="modal-content animate-pop-in">
         <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">新建人物关系</h3>
         <div class="space-y-3">
           <select v-model="newRelationSource" class="form-input">
@@ -779,8 +779,8 @@ function stopDrag() {
       </div>
     </div>
 
-    <div v-if="showNewInspirationModal" class="modal-overlay" @click.self="showNewInspirationModal = false">
-      <div class="modal-content">
+    <div v-if="showNewInspirationModal" class="modal-overlay animate-fade-in" @click.self="showNewInspirationModal = false">
+      <div class="modal-content animate-pop-in">
         <h3 class="font-serif text-xl font-semibold mb-4" :style="{ color: 'var(--text-primary)' }">记录灵感</h3>
         <div class="space-y-3">
           <input v-model="newInspirationTitle" type="text" class="form-input" placeholder="灵感标题" />

@@ -190,7 +190,7 @@ function handleStreamSend() {
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden shrink-0 border-l"
+  <div class="flex flex-col h-full overflow-hidden shrink-0 border-l animate-slide-in-right"
     :style="{ backgroundColor: 'var(--surface)', borderLeftColor: 'var(--border-clr)' }">
     <!-- Header -->
     <div class="flex items-center justify-between gap-2 px-4 py-2.5 border-b"
@@ -270,7 +270,7 @@ function handleStreamSend() {
         ></textarea>
       </div>
 
-      <div v-for="(msg, idx) in aiStore.chatMessages" :key="idx" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+      <div v-for="(msg, idx) in aiStore.chatMessages" :key="idx" class="animate-fade-up" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
         <div :class="msg.role === 'user'
           ? 'inline-block rounded-2xl rounded-tr-md px-3.5 py-2.5 text-sm max-w-[90%]'
           : 'inline-block rounded-2xl rounded-tl-md px-3.5 py-2.5 text-sm max-w-[90%] whitespace-pre-wrap'"
@@ -290,8 +290,12 @@ function handleStreamSend() {
 
       <div v-if="isDiffLoading" class="rounded-xl border p-3.5"
         :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
-        <div class="flex items-center gap-2 text-sm" :style="{ color: 'var(--text-secondary)' }">
-          <div class="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin"></div>
+        <div class="motion-ambient flex items-center gap-2 text-sm" :style="{ color: 'var(--text-secondary)' }">
+          <span class="inline-flex items-center gap-1">
+            <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand"></span>
+            <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.15s"></span>
+            <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.3s"></span>
+          </span>
           正在流式生成 AI 润色...
         </div>
         <div class="text-xs mt-1 pl-6" :style="{ color: 'var(--text-muted)' }">
@@ -299,7 +303,7 @@ function handleStreamSend() {
         </div>
         <div v-if="streamingDiffText" class="mt-3 text-sm leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-48 overflow-y-auto font-serif"
           :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">
-          {{ streamingDiffText }}
+          {{ streamingDiffText }}<span class="motion-ambient animate-caret inline-block w-[2px] h-[1em] align-[-2px] ml-0.5 bg-brand"></span>
         </div>
       </div>
 
@@ -402,8 +406,12 @@ function handleStreamSend() {
       </div>
 
       <!-- Loading -->
-      <div v-if="aiStore.isLoading && !isDiffLoading" class="flex items-center gap-2 text-sm" :style="{ color: 'var(--text-muted)' }">
-        <div class="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin"></div>
+      <div v-if="aiStore.isLoading && !isDiffLoading" class="motion-ambient flex items-center gap-2 text-sm" :style="{ color: 'var(--text-muted)' }">
+        <span class="inline-flex items-center gap-1 px-1">
+          <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand"></span>
+          <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.15s"></span>
+          <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.3s"></span>
+        </span>
         AI 思考中...
       </div>
 

@@ -18,7 +18,11 @@ onMounted(() => {
     <div class="flex-1 flex min-h-0">
       <Sidebar v-if="showSidebar" />
       <main class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <Transition name="page-fade" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
       </main>
     </div>
   </div>

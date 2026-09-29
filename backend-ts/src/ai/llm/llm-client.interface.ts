@@ -4,6 +4,27 @@ export const LLM_CLIENT = Symbol('LLM_CLIENT');
 export interface ChatMessage {
   role: string;
   content: string;
+  /** role:'assistant' 且模型请求工具时携带；下一轮原样回传 */
+  toolCalls?: LlmToolCall[];
+  /** role:'tool' 的工具结果消息：对应哪次调用 + 工具名 */
+  toolCallId?: string;
+  toolName?: string;
+}
+
+/** OpenAI 兼容 function-tool 规格（请求体 tools[] 里 function 字段的内容） */
+export interface LlmToolSpec {
+  name: string;
+  description: string;
+  /** JSON Schema 参数描述 */
+  parameters: Record<string, unknown>;
+}
+
+/** 模型返回的一次工具调用请求（assistant 消息 tool_calls 的一项） */
+export interface LlmToolCall {
+  id: string;
+  name: string;
+  /** 原始 JSON 字符串参数（agent 层负责解析与容错） */
+  argumentsJson: string;
 }
 
 export interface LlmCallOptions {
@@ -15,10 +36,14 @@ export interface LlmCallOptions {
   temperature?: number;
   /** 取消信号：SSE 客户端断开时中止上游请求，不再白烧 token */
   signal?: AbortSignal;
+  /** 工具规格（agent 模式）；给出时走 OpenAI 兼容 function calling */
+  tools?: LlmToolSpec[];
 }
 
 export interface LlmResult {
   answer: string;
+  /** 模型本轮请求的工具调用；为空表示这一轮就是最终回答 */
+  toolCalls?: LlmToolCall[];
 }
 
 /**

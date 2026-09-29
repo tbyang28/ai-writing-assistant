@@ -5,7 +5,7 @@
 这是一个基于 **NestJS + Vue3** 的 AI 写作辅助平台，旨在帮助网文作者提升写作效率。项目集成 DeepSeek-V3.2 等多个大语言模型，支持续写、润色、校对、大纲生成、Diff 润色等功能，并通过 RAG（检索增强生成）技术提升内容一致性。
 
 > **架构说明**：后端已从 Python/FastAPI 重写为 TypeScript（`backend-ts/`，API 契约逐项对齐，前端零改动完成切换）。
-> 旧的 Python 实现保留在 `backend/` 作为参考答案，不再作为主后端运行。
+> 旧的 Python 实现已删除（git 历史可查），`backend-ts/` 是唯一后端。
 
 ---
 
@@ -59,7 +59,7 @@
 | 部署 | Docker + Docker Compose | - |
 | 测试 | Vitest + supertest（**174 个用例**） | ^3.2 |
 
-> 旧版 Python 技术栈：FastAPI ^0.104 + SQLAlchemy ^2.0 + SQLite（`backend/`，保留参考）。
+> 旧版 Python 技术栈（已删除）：FastAPI + SQLAlchemy + SQLite。
 
 ---
 
@@ -126,7 +126,7 @@ ai-writing-assistant/
 │   ├── test/                   # 174 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
 │   ├── tools/import-sqlite.ts  # 旧 SQLite 数据 → PostgreSQL 一次性迁移
 │   ├── drizzle.config.ts / Dockerfile / vitest.config.ts
-├── backend/                    # 📚 Python/FastAPI 旧实现（参考答案，冻结不动）
+├── backend/                    #（已删除；旧 Python 实现见 git 历史）
 ├── frontend/                   # 前端 Vue3 应用（迁移期间零改动）
 │   ├── src/…                   #   组件/视图/状态与之前一致
 │   └── nginx.conf              # 镜像内配置（本地由 deploy/nginx.conf 挂载覆盖）
@@ -214,12 +214,13 @@ npx tsc --noEmit                     # 类型检查
 
 ---
 
-## 🔄 数据迁移（SQLite → PostgreSQL）
+## 🔄 数据迁移（SQLite → PostgreSQL，历史一次性脚本）
+
+Python 后端已删除，`tools/import-sqlite.ts` 仅保留给仍需从旧 SQLite 文件导入数据的场景（需自行提供 `writing_platform.db`）：
 
 ```bash
 cd backend-ts
-# 把旧 Python 后端的 SQLite 数据导入 Postgres（幂等，可重跑）
-npx tsx tools/import-sqlite.ts ../backend/writing_platform.db \
+npx tsx tools/import-sqlite.ts /path/to/writing_platform.db \
   postgres://postgres:postgres@localhost:5435/ai_writing
 ```
 
