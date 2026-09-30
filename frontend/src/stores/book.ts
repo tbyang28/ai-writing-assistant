@@ -57,6 +57,10 @@ export interface Book {
   status: string
   word_count: number
   owner_id: string
+  visibility?: 'PUBLIC' | 'PRIVATE'
+  genre?: string
+  tags?: string[] | string
+  allow_comments?: boolean
   created_at?: string
   updated_at?: string
   chapters?: Chapter[]
@@ -237,6 +241,14 @@ export const useBookStore = defineStore('book', () => {
     return updated
   }
 
+  async function unpublishChapter(chapterId: string) {
+    if (!currentBook.value) return
+    const updated = unwrapPayload<Chapter>(await apiPut(`/books/${currentBook.value.id}/chapters/${chapterId}`, { status: 'DRAFT' }))
+    await fetchBook(currentBook.value.id)
+    currentChapter.value = updated
+    return updated
+  }
+
   async function createOutline(bookId: string, data: { title: string; content?: string }) {
     const res: any = await apiPost(`/books/${bookId}/outlines`, data)
     if (currentBook.value?.id === bookId) await fetchBook(bookId)
@@ -276,7 +288,7 @@ export const useBookStore = defineStore('book', () => {
     books, currentBook, isLoading, stats, writingStats, currentChapter,
     fetchBooks, fetchBook, createBook, seedDemoBook, updateBook, deleteBook,
     fetchStats, fetchWritingStats,
-    createChapter, fetchChapter, saveChapter, deleteChapter, publishChapter,
+    createChapter, fetchChapter, saveChapter, deleteChapter, publishChapter, unpublishChapter,
     createOutline, createCharacter, createCharacterRelation, deleteCharacterRelation, createInspiration,
   }
 })

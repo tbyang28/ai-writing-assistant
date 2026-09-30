@@ -169,6 +169,7 @@ onBeforeUnmount(() => {
           <span class="font-serif font-semibold text-[15px]">AI 写作助手</span>
         </div>
         <div class="flex items-center gap-2">
+          <RouterLink to="/discover" class="btn-ghost text-sm">发现作品</RouterLink>
           <RouterLink to="/auth" class="btn-ghost text-sm">登录</RouterLink>
           <RouterLink to="/auth" class="btn-primary text-sm">开始写作</RouterLink>
         </div>

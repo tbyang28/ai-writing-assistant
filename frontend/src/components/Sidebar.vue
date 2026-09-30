@@ -12,6 +12,9 @@ const themeStore = useThemeStore()
 const bookStore = useBookStore()
 
 const navItems = computed(() => [
+  { path: '/discover', label: '发现', icon: 'discover', active: route.path === '/discover' || route.path.startsWith('/community/books') },
+  { path: '/bookshelf', label: '我的收藏', icon: 'book', active: route.path === '/bookshelf' },
+  { path: '/notifications', label: '通知', icon: 'bell', active: route.path === '/notifications' },
   {
     path: '/home',
     label: '工作台',
@@ -38,10 +41,10 @@ const navItems = computed(() => [
   },
 ])
 
-const recentBooks = computed(() => bookStore.books.slice(0, 4))
+const recentBooks = computed(() => authStore.isLoggedIn ? bookStore.books.slice(0, 4) : [])
 
 onMounted(() => {
-  if (!bookStore.books.length) {
+  if (authStore.isLoggedIn && !bookStore.books.length) {
     bookStore.fetchBooks().catch(() => {})
   }
 })
@@ -54,7 +57,8 @@ function formatWordCount(count?: number | null) {
 
 async function handleLogout() {
   authStore.logout()
-  await router.replace('/auth')
+  bookStore.books = []; bookStore.currentBook = null
+  await router.replace('/discover')
 }
 </script>
 
@@ -82,13 +86,17 @@ async function handleLogout() {
         v-for="item in navItems"
         :key="item.path"
         :to="item.path"
+        :title="item.label"
+        :aria-label="item.label"
         class="flex items-center justify-center lg:justify-start gap-3 px-2 lg:px-3 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150"
         :class="!item.active && 'hover:bg-[var(--surface-hover)]'"
         :style="item.active
           ? { backgroundColor: 'var(--brand-soft)', color: 'var(--brand-hover)' }
           : { color: 'var(--text-secondary)' }"
       >
-        <svg v-if="item.icon === 'home'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg v-if="item.icon === 'discover'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/></svg>
+        <svg v-else-if="item.icon === 'bell'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+        <svg v-else-if="item.icon === 'home'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
           <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
@@ -108,7 +116,7 @@ async function handleLogout() {
     </nav>
 
     <!-- 最近作品快捷列表 -->
-    <div class="hidden lg:block flex-1 min-h-0 overflow-y-auto px-2.5 pb-3">
+    <div v-if="authStore.isLoggedIn" class="hidden lg:block flex-1 min-h-0 overflow-y-auto px-2.5 pb-3">
       <div class="px-3 pb-2 text-[11px] font-semibold uppercase" :style="{ letterSpacing: '0.14em', color: 'var(--text-muted)' }">
         最近作品
       </div>
@@ -132,15 +140,15 @@ async function handleLogout() {
     </div>
 
     <!-- User & Theme Toggle -->
-    <div class="border-t p-3 space-y-1"
+    <div class="border-t p-3 space-y-1 mt-auto"
       :style="{ borderTopColor: 'var(--border-clr)' }">
-      <div class="hidden lg:flex items-center gap-2.5 mb-2 px-1.5">
+      <router-link v-if="authStore.user" :to="`/community/users/${authStore.user.id}`" aria-label="我的公开资料" title="我的公开资料" class="hidden lg:flex items-center gap-2.5 mb-2 px-1.5">
         <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
           :style="{ backgroundColor: 'var(--ink)', color: 'var(--ink-text)' }">
           {{ (authStore.user?.name || 'U')[0].toUpperCase() }}
         </div>
         <span class="text-sm truncate flex-1" :style="{ color: 'var(--text-primary)' }">{{ authStore.user?.name || '用户' }}</span>
-      </div>
+      </router-link>
 
       <!-- Dark mode toggle -->
       <button type="button" @click="themeStore.toggle()"
@@ -156,7 +164,8 @@ async function handleLogout() {
         <span class="hidden lg:inline">{{ themeStore.isDark ? '浅色模式' : '深色模式' }}</span>
       </button>
 
-      <button type="button" @click="handleLogout"
+      <router-link v-if="!authStore.isLoggedIn" :to="{ path: '/auth', query: { redirect: route.fullPath } }" class="btn-primary w-full" title="登录" aria-label="登录"><span class="hidden lg:inline">登录 / 注册</span><span class="lg:hidden">登录</span></router-link>
+      <button v-else type="button" @click="handleLogout"
         class="w-full flex items-center justify-center lg:justify-start gap-2.5 px-3 py-2 text-sm rounded-xl transition-colors duration-150 hover:bg-[var(--surface-hover)]"
         :style="{ color: 'var(--text-muted)' }">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -146,7 +146,7 @@ export const useAiStore = defineStore('ai', () => {
       return payload
     } catch (err: any) {
       error.value = parseAxiosError(err, 'AI 响应失败')
-      addMessage('assistant', error.value)
+      addMessage('assistant', error.value || 'AI 响应失败')
       return null
     } finally {
       isLoading.value = false
@@ -227,8 +227,8 @@ export const useAiStore = defineStore('ai', () => {
       return { answer: fullText }
     } catch (err: any) {
       error.value = err.message || '流式响应失败'
-      if (!chatMessages.value.at(-1)?.content) {
-        replaceLastAssistantContent(error.value)
+      if (!chatMessages.value[chatMessages.value.length - 1]?.content) {
+        replaceLastAssistantContent(error.value || '流式响应失败')
       }
       return null
     } finally {

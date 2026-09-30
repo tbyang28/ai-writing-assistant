@@ -5,6 +5,7 @@ import { useBookStore, type Chapter, type Outline, type Character } from '@/stor
 import { useAiStore } from '@/stores/ai'
 import AiPanel from '@/components/AiPanel.vue'
 import CharacterGraph from '@/components/CharacterGraph.vue'
+import { communityError } from '@/stores/community'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +18,19 @@ const editorContent = ref('')
 const editorTitle = ref('')
 const saveTimer = ref<any>(null)
 const saving = ref(false)
+const changingPublication = ref(false), publicationError = ref('')
+const activeChapterStatus = computed(() => chapters.value.find(ch => ch.id === activeChapterId.value)?.status || 'DRAFT')
+async function toggleChapterPublication() {
+  if (!activeChapterId.value || changingPublication.value) return
+  const id = activeChapterId.value
+  changingPublication.value = true; publicationError.value = ''
+  if (saveTimer.value) clearTimeout(saveTimer.value)
+  try {
+    await saveCurrentChapter()
+    if (activeChapterStatus.value === 'PUBLISHED') await bookStore.unpublishChapter(id)
+    else await bookStore.publishChapter(id)
+  } catch(e) { publicationError.value = communityError(e) } finally { changingPublication.value = false }
+}
 const showOutline = ref(false)
 const showCharacters = ref(false)
 const workspaceMode = ref<'editor' | 'graph'>('editor')
@@ -387,6 +401,7 @@ function stopDrag() {
           <span class="text-[11px]" :style="{ color: 'var(--text-muted)' }">{{ saving ? '保存中...' : '已保存' }}</span>
         </div>
         <h2 class="font-serif text-[15px] font-semibold mt-1.5 truncate" :style="{ color: 'var(--text-primary)' }">{{ bookStore.currentBook?.title }}</h2>
+        <div v-if="activeChapterId" class="mt-3"><button @click="toggleChapterPublication" :disabled="changingPublication || saving" class="btn-secondary !text-xs w-full">{{ changingPublication ? '更新中…' : activeChapterStatus === 'PUBLISHED' ? '转为草稿 / 撤下章节' : '发布本章' }}</button><p class="text-[11px] leading-5 mt-2 community-muted">{{ activeChapterStatus === 'PUBLISHED' ? '已发布。作品公开时，后续正文修改会同步给读者。' : '草稿仅自己可见。作品公开后，已发布章节可被阅读。' }}</p><p v-if="publicationError" class="community-feedback text-xs mt-2" role="alert">{{ publicationError }}</p></div>
       </div>
 
       <!-- Tabs -->
@@ -438,7 +453,7 @@ function stopDrag() {
               </div>
               <div class="text-[11px] mt-0.5"
                 :style="{ color: activeChapterId === ch.id ? 'var(--brand-hover)' : 'var(--text-muted)' }">
-                {{ ch.word_count }}字
+                {{ ch.word_count }}字 · {{ ch.status === 'PUBLISHED' ? '已发布' : '草稿' }}
               </div>
             </div>
             <button

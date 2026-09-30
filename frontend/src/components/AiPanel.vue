@@ -113,7 +113,7 @@ async function runCommand(command: string) {
   // 先加入一个空白 AI 消息，流式输出会逐字填充它
   aiStore.addMessage('assistant', '')
 
-  await aiStore.streamWrite(props.bookId, props.chapterContent, command, (chunk) => {
+  await aiStore.streamWrite(props.bookId, props.chapterContent || '', command, (chunk) => {
     aiStore.appendToLastAssistant(chunk)
   }, undefined, props.chapterId)
 }

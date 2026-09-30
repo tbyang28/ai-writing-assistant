@@ -1,12 +1,15 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api, apiGet, apiPost } from '@/api'
+import { useCommunityStore } from './community'
 
 export interface AuthUser {
   id: string
   email: string
   name: string
   avatar: string
+  username?: string
+  bio?: string
 }
 
 function readStoredUser(): AuthUser | null {
@@ -31,6 +34,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => Boolean(token.value))
 
   function setAuth(newToken: string, newUser: AuthUser) {
+    useCommunityStore().$reset()
     token.value = newToken
     user.value = newUser
     localStorage.setItem('token', newToken)
@@ -38,6 +42,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    useCommunityStore().$reset()
     token.value = null
     user.value = null
     localStorage.removeItem('token')

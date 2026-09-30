@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const isLogin = ref(true)
@@ -28,7 +29,8 @@ async function handleSubmit() {
     } else {
       await authStore.register(email.value, password.value, name.value || undefined)
     }
-    router.push('/home')
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/home'
+    router.push(redirect.startsWith('/') && !redirect.startsWith('//') && !redirect.startsWith('/auth') ? redirect : '/home')
   } catch (err: any) {
     errorMsg.value = err?.response?.data?.detail || err?.message || '操作失败，请重试'
   } finally {
@@ -143,6 +145,7 @@ async function handleSubmit() {
               </button>
             </form>
 
+            <router-link to="/discover" class="block mt-5 text-center text-sm hover:underline">先逛逛公开作品 →</router-link>
             <div class="mt-6 text-center text-sm" :style="{ color: 'var(--text-muted)' }">
               {{ isLogin ? '还没有账号？' : '已有账号？' }}
               <button @click="toggleMode" class="font-medium transition-colors"
