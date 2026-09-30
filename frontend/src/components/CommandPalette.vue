@@ -44,7 +44,7 @@ const commands = computed<Command[]>(() => {
     id: `book-${b.id}`,
     title: `打开《${b.title}》`,
     hint: '编辑器',
-    run: () => router.push(`/editor/${b.id}`),
+    run: async () => { await router.push(`/editor/${b.id}`) },
   }))
   return [...base, ...bookCmds]
 })

@@ -108,6 +108,14 @@
   }
 }
 
+@media (max-width: 768px) {
+  .editor-left-sidebar,
+  .editor-left-resize,
+  .editor-right-resize {
+    display: none !important;
+  }
+}
+
 /* ===================== 动画原语 ===================== */
 /* 设计原则：入场 400-500ms 缓出、悬浮即时 150ms、循环动效幅度极小（Claude 式克制） */
 

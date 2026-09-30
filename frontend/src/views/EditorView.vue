@@ -4,7 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useBookStore, type Chapter, type Outline, type Character } from '@/stores/book'
 import { useAiStore } from '@/stores/ai'
 import AiPanel from '@/components/AiPanel.vue'
+import ChangePreview from '@/components/ChangePreview.vue'
 import CharacterGraph from '@/components/CharacterGraph.vue'
+import { prepareAiChange, type AiChangeProposal, type PreparedAiChange } from '@/utils/aiChange'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,6 +28,8 @@ const undoSnapshot = ref('')
 const showAiUndo = ref(false)
 const aiUndoMessage = ref('已插入 AI 内容')
 let undoHideTimer: ReturnType<typeof setTimeout> | null = null
+
+const pendingAiChange = ref<PreparedAiChange | null>(null)
 
 // Resizable panels
 const leftPanelWidth = ref(224)       // default: w-56 = 14rem = 224px
@@ -101,6 +105,10 @@ const activeChapterOrder = computed(() => {
 
 async function loadChapter(id: string) {
   activeChapterId.value = id
+  pendingAiChange.value = null
+  selectionStart.value = 0
+  selectionEnd.value = 0
+  aiStore.setSelectedText('')
   const chapter = await bookStore.fetchChapter(id)
   if (chapter) {
     editorContent.value = chapter.content || ''
@@ -254,41 +262,40 @@ async function deleteChapter(chapter: Chapter) {
     activeChapterId.value = null
     editorContent.value = ''
     editorTitle.value = ''
+    pendingAiChange.value = null
   }
 }
 
-function applyAiText(text: string) {
-  if (text) {
-    undoSnapshot.value = editorContent.value
-    editorContent.value += text
-    aiUndoMessage.value = '已插入 AI 内容'
-    showAiUndo.value = true
-    if (undoHideTimer) clearTimeout(undoHideTimer)
-    undoHideTimer = setTimeout(() => { showAiUndo.value = false }, 5000)
+function previewAiChange(proposal: AiChangeProposal) {
+  if (pendingAiChange.value) return
+  const prepared = prepareAiChange(activeChapterId.value, editorContent.value, proposal)
+  if (!prepared) {
+    aiStore.error = '正文或章节已变化，这份 AI 结果已过期，请重新生成。'
+    return
   }
+  aiStore.error = null
+  pendingAiChange.value = prepared
 }
 
-function replaceAiText(text: string) {
-  if (!text) return
-  undoSnapshot.value = editorContent.value
-  aiUndoMessage.value = '已应用 AI 修改'
+function acceptAiChange() {
+  const change = pendingAiChange.value
+  if (!change) return
 
-  if (selectionEnd.value > selectionStart.value) {
-    editorContent.value =
-      editorContent.value.slice(0, selectionStart.value) +
-      text +
-      editorContent.value.slice(selectionEnd.value)
-    selectionEnd.value = selectionStart.value + text.length
-  } else {
-    editorContent.value = text
-    selectionStart.value = 0
-    selectionEnd.value = text.length
-  }
-
+  undoSnapshot.value = change.original
+  editorContent.value = change.revised
+  const insertedLength = change.revised.length - change.original.length + (change.end - change.start)
+  selectionStart.value = change.start
+  selectionEnd.value = change.start + Math.max(0, insertedLength)
+  pendingAiChange.value = null
+  aiUndoMessage.value = change.label.includes('插入') ? '已插入 AI 内容' : '已应用 AI 修改'
   showAiUndo.value = true
   if (undoHideTimer) clearTimeout(undoHideTimer)
   undoHideTimer = setTimeout(() => { showAiUndo.value = false }, 5000)
   nextTick(autoResizeTextarea)
+}
+
+function rejectAiChange() {
+  pendingAiChange.value = null
 }
 
 function undoAiInsert() {
@@ -372,7 +379,7 @@ function stopDrag() {
 <template>
   <div class="flex-1 flex min-h-0 overflow-hidden">
     <!-- Left sidebar - chapters & outlines -->
-    <div class="flex flex-col shrink-0 border-r" :style="{ width: leftPanelWidth + 'px', backgroundColor: 'var(--surface)', borderRightColor: 'var(--border-clr)' }">
+    <div class="editor-left-sidebar flex flex-col shrink-0 border-r" :style="{ width: leftPanelWidth + 'px', backgroundColor: 'var(--surface)', borderRightColor: 'var(--border-clr)' }">
       <!-- Book info -->
       <div class="p-3.5 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
         <div class="flex items-center justify-between">
@@ -537,7 +544,7 @@ function stopDrag() {
 
     <!-- Left resize handle -->
     <div
-      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-800 shrink-0 relative"
+      class="editor-left-resize w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-800 shrink-0 relative"
       @mousedown.prevent="startDrag($event, 'left')"
     >
       <div class="absolute inset-y-0 left-0 w-px" :style="{ backgroundColor: 'var(--border-clr)' }"></div>
@@ -594,7 +601,16 @@ function stopDrag() {
           :book-title="bookStore.currentBook?.title"
         />
         <div v-else-if="activeChapterId" class="max-w-3xl mx-auto px-8 py-8">
+          <ChangePreview
+            v-if="pendingAiChange"
+            :original="pendingAiChange.original"
+            :revised="pendingAiChange.revised"
+            :label="pendingAiChange.label"
+            @accept="acceptAiChange"
+            @reject="rejectAiChange"
+          />
           <textarea
+            v-else
             ref="textareaRef"
             v-model="editorContent"
             @select="updateEditorSelection"
@@ -630,7 +646,7 @@ function stopDrag() {
     <!-- Right resize handle -->
     <div
       v-if="aiStore.isPanelOpen"
-      class="w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-800 shrink-0 relative"
+      class="editor-right-resize w-1.5 cursor-col-resize hover:bg-brand-200 active:bg-brand-300 dark:hover:bg-brand-800 shrink-0 relative"
       @mousedown.prevent="startDrag($event, 'right')"
     >
       <div class="absolute inset-y-0 right-0 w-px" :style="{ backgroundColor: 'var(--border-clr)' }"></div>
@@ -643,9 +659,10 @@ function stopDrag() {
       :chapter-content="editorContent"
       :chapter-id="activeChapterId || undefined"
       :selected-text="aiStore.selectedText"
+      :selection-start="selectionStart"
+      :selection-end="selectionEnd"
       :style="{ width: rightPanelWidth + 'px' }"
-      @apply-text="applyAiText"
-      @replace-text="replaceAiText"
+      @apply-change="previewAiChange"
     />
 
     <!-- Modals -->

@@ -146,7 +146,7 @@ export const useAiStore = defineStore('ai', () => {
       return payload
     } catch (err: any) {
       error.value = parseAxiosError(err, 'AI 响应失败')
-      addMessage('assistant', error.value)
+      addMessage('assistant', error.value || 'AI 响应失败')
       return null
     } finally {
       isLoading.value = false
@@ -156,6 +156,7 @@ export const useAiStore = defineStore('ai', () => {
   async function streamChat(bookId: string, message: string, onToken: (text: string) => void, currentContent?: string, chapterId?: string) {
     isLoading.value = true
     error.value = null
+    const responseHistoryKey = activeHistoryKey.value
     addMessage('user', message)
     addMessage('assistant', '')
 
@@ -179,7 +180,7 @@ export const useAiStore = defineStore('ai', () => {
 
       if (!response.ok) {
         const message = await parseErrorResponse(response)
-        replaceLastAssistantContent(message)
+        if (activeHistoryKey.value === responseHistoryKey) replaceLastAssistantContent(message)
         throw new Error(message)
       }
 
@@ -213,22 +214,24 @@ export const useAiStore = defineStore('ai', () => {
           if (parsed.type === 'token') {
             const text = parsed.data?.text || ''
             fullText += text
-            onToken(text)
+            if (activeHistoryKey.value === responseHistoryKey) onToken(text)
           } else if (parsed.type === 'error') {
             const message = parsed.data?.message || 'AI 流式响应失败'
-            replaceLastAssistantContent(message)
+            if (activeHistoryKey.value === responseHistoryKey) replaceLastAssistantContent(message)
             throw new Error(message)
           }
         }
       }
 
-      lastResponse.value = { answer: fullText }
-      persistChatHistory()
+      if (activeHistoryKey.value === responseHistoryKey) {
+        lastResponse.value = { answer: fullText }
+        persistChatHistory()
+      }
       return { answer: fullText }
     } catch (err: any) {
       error.value = err.message || '流式响应失败'
-      if (!chatMessages.value.at(-1)?.content) {
-        replaceLastAssistantContent(error.value)
+      if (activeHistoryKey.value === responseHistoryKey && !chatMessages.value[chatMessages.value.length - 1]?.content) {
+        replaceLastAssistantContent(error.value || '流式响应失败')
       }
       return null
     } finally {

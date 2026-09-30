@@ -1,452 +1,235 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
+import type { AiChangeProposal } from '@/utils/aiChange'
 
-// 可选模型列表（显示名 → SiliconFlow model ID）
 const MODEL_OPTIONS = [
   { label: 'DeepSeek-V4-Flash', value: 'deepseek-ai/DeepSeek-V4-Flash' },
   { label: 'DeepSeek-V3.2', value: 'deepseek-ai/DeepSeek-V3.2' },
   { label: 'GLM-4.7', value: 'zai-org/GLM-4.7' },
   { label: 'MiniMax-M2.5', value: 'MiniMaxAI/MiniMax-M2.5' },
 ]
+type PanelMode = 'write' | 'chat'
+type WriteCommand = 'continue' | 'fix' | 'summarize'
+type WriteResult = { text: string; command: WriteCommand; description: string; original: string; chapterId: string; start: number; end: number; status: 'streaming' | 'ready' | 'error' }
+type DiffContext = { chapterId: string; original: string; start: number; end: number }
 
 const props = defineProps<{
   bookId: string
   chapterContent?: string
   chapterId?: string
   selectedText?: string
+  selectionStart?: number
+  selectionEnd?: number
 }>()
-
-const emit = defineEmits<{
-  applyText: [text: string]
-  replaceText: [text: string]
-}>()
-
+const emit = defineEmits<{ applyChange: [proposal: AiChangeProposal] }>()
 const aiStore = useAiStore()
+const panelMode = ref<PanelMode>('write')
 const inputText = ref('')
 const isComposing = ref(false)
 const compositionPending = ref(false)
-const polishDiffResult = ref<Awaited<ReturnType<typeof aiStore.polishDiff>> | null>(null)
+const messagesRef = ref<HTMLElement | null>(null)
 const diffInstruction = ref('')
 const diffInstructionRef = ref<HTMLTextAreaElement | null>(null)
 const isDiffLoading = ref(false)
 const showDiffControls = ref(false)
 const showSideBySide = ref(false)
 const streamingDiffText = ref('')
+const writeResult = ref<WriteResult | null>(null)
+const diffResult = ref<Awaited<ReturnType<typeof aiStore.polishDiff>> | null>(null)
+const diffContext = ref<DiffContext | null>(null)
+let contextVersion = 0
 
-const diffTargetReady = computed(() => Boolean(props.selectedText || props.chapterContent))
-const diffTargetLabel = computed(() => (
-  props.selectedText ? '范围：当前选中文本' : '范围：整章内容'
-))
-const diffRevisedPreview = computed(() => {
-  const result = polishDiffResult.value
-  if (!result) return ''
-  return result.revised.slice(0, result.processed_length ?? result.revised.length)
-})
-
+const chapterContent = computed(() => props.chapterContent || '')
+const hasSelection = computed(() => Boolean(props.selectedText) && (props.selectionEnd ?? 0) > (props.selectionStart ?? 0))
+const targetLabel = computed(() => hasSelection.value ? '选中文本' : '整章正文')
+const targetLength = computed(() => hasSelection.value ? props.selectedText?.length || 0 : chapterContent.value.length)
+const targetPreview = computed(() => hasSelection.value ? props.selectedText || '' : chapterContent.value.slice(0, 72))
+const isBusy = computed(() => aiStore.isLoading || isDiffLoading.value)
+const writeResultStale = computed(() => Boolean(writeResult.value && (writeResult.value.chapterId !== props.chapterId || writeResult.value.original !== chapterContent.value)))
+const diffResultStale = computed(() => Boolean(diffContext.value && (diffContext.value.chapterId !== props.chapterId || diffContext.value.original !== chapterContent.value)))
+const diffTargetReady = computed(() => Boolean(hasSelection.value || chapterContent.value.trim()))
+const diffTargetLabel = computed(() => '范围：' + targetLabel.value + ' · ' + targetLength.value + ' 字')
+const diffRevisedPreview = computed(() => diffResult.value?.revised.slice(0, diffResult.value.processed_length ?? diffResult.value.revised.length) || '')
 const diffStats = computed(() => {
-  const segments = polishDiffResult.value?.segments || []
+  const segments = diffResult.value?.segments || []
   let addedChars = 0
   let removedChars = 0
   let replacements = 0
-
-  for (let i = 0; i < segments.length; i += 1) {
-    const segment = segments[i]
-    const next = segments[i + 1]
-    if (segment.type === 'delete' && next?.type === 'insert') {
-      replacements += 1
-      i += 1
-    } else if (segment.type === 'delete') {
-      removedChars += segment.text.length
-    } else if (segment.type === 'insert') {
-      addedChars += segment.text.length
-    }
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]
+    const next = segments[index + 1]
+    if (segment.type === 'delete' && next?.type === 'insert') { replacements += 1; index += 1 }
+    else if (segment.type === 'delete') removedChars += segment.text.length
+    else if (segment.type === 'insert') addedChars += segment.text.length
   }
-
   return { addedChars, removedChars, replacements }
 })
 
-onMounted(() => {
-  aiStore.loadChatHistory(props.bookId, props.chapterId)
-})
-
-watch(
-  () => [props.bookId, props.chapterId],
-  () => {
-    aiStore.loadChatHistory(props.bookId, props.chapterId)
-  },
-)
-
-async function sendMessage() {
-  if (!inputText.value.trim() || aiStore.isLoading) return
-  const msg = inputText.value
-  inputText.value = ''
-  await aiStore.sendMessage(props.bookId, msg, props.chapterContent, props.chapterId)
+function commandLabel(command: WriteCommand) {
+  return { continue: '续写', fix: '校对', summarize: '摘要' }[command]
 }
+function commandDescription(command: WriteCommand) {
+  return {
+    continue: '接在当前章节末尾',
+    fix: hasSelection.value ? '校对当前选中文本' : '校对整章正文',
+    summarize: hasSelection.value ? '概括当前选中文本' : '概括整章正文',
+  }[command]
+}
+function writeRange(command: WriteCommand) {
+  if (command === 'continue') return { start: chapterContent.value.length, end: chapterContent.value.length }
+  if (hasSelection.value) return { start: props.selectionStart || 0, end: props.selectionEnd || 0 }
+  return { start: 0, end: chapterContent.value.length }
+}
+function scrollMessagesToEnd() {
+  nextTick(() => { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight })
+}
+function resetChapterContext() {
+  contextVersion += 1
+  aiStore.loadChatHistory(props.bookId, props.chapterId)
+  writeResult.value = null
+  diffResult.value = null
+  diffContext.value = null
+  showDiffControls.value = false
+  streamingDiffText.value = ''
+  inputText.value = ''
+}
+onMounted(resetChapterContext)
+watch(() => [props.bookId, props.chapterId], resetChapterContext)
+watch(() => [aiStore.chatMessages.length, aiStore.isLoading, writeResult.value?.text, streamingDiffText.value], scrollMessagesToEnd)
 
+async function runCommand(command: WriteCommand) {
+  if (isBusy.value || !props.chapterId || (!chapterContent.value && command !== 'continue')) return
+  panelMode.value = 'write'
+  aiStore.error = null
+  const range = writeRange(command)
+  const original = chapterContent.value
+  const version = contextVersion
+  const selected = command === 'continue' ? undefined : (hasSelection.value ? props.selectedText : undefined)
+  writeResult.value = { text: '', command, description: commandDescription(command), original, chapterId: props.chapterId, start: range.start, end: range.end, status: 'streaming' }
+  const result = await aiStore.streamWrite(props.bookId, original, command, (chunk) => {
+    if (version === contextVersion && writeResult.value) writeResult.value.text += chunk
+  }, selected, props.chapterId)
+  if (version === contextVersion && writeResult.value?.command === command) writeResult.value.status = result?.answer ? 'ready' : 'error'
+}
+function previewWriteResult() {
+  const result = writeResult.value
+  if (!result?.text || result.command === 'summarize' || result.status !== 'ready' || writeResultStale.value) return
+  emit('applyChange', { chapterId: result.chapterId, original: result.original, start: result.start, end: result.end, replacement: result.text, label: 'AI ' + commandLabel(result.command) + '预览' })
+}
+async function runPolishDiff() {
+  if (isDiffLoading.value || aiStore.isLoading || !props.chapterId || !diffTargetReady.value) return
+  panelMode.value = 'write'
+  showDiffControls.value = true
+  showSideBySide.value = false
+  diffResult.value = null
+  streamingDiffText.value = ''
+  isDiffLoading.value = true
+  const version = contextVersion
+  const original = chapterContent.value
+  const range = hasSelection.value ? { start: props.selectionStart || 0, end: props.selectionEnd || 0 } : { start: 0, end: original.length }
+  diffContext.value = { chapterId: props.chapterId, original, ...range }
+  try {
+    const result = await aiStore.polishDiffStream(props.bookId, original, hasSelection.value ? props.selectedText : undefined, props.chapterId, diffInstruction.value, (_chunk, fullText) => {
+      if (version === contextVersion) streamingDiffText.value = fullText
+    })
+    if (version === contextVersion) {
+      diffResult.value = result
+      streamingDiffText.value = ''
+    }
+  } finally {
+    isDiffLoading.value = false
+  }
+}
+function previewPolishDiff() {
+  const result = diffResult.value
+  const context = diffContext.value
+  if (!result?.revised || !context || diffResultStale.value) return
+  emit('applyChange', { chapterId: context.chapterId, original: context.original, start: context.start, end: context.end, replacement: result.revised, label: 'AI Diff 润色预览' })
+}
+function clearDiffReview() {
+  diffResult.value = null
+  diffContext.value = null
+  streamingDiffText.value = ''
+  showDiffControls.value = false
+  showSideBySide.value = false
+}
+function focusDiffInstruction() { nextTick(() => diffInstructionRef.value?.focus()) }
+function openDiffReview() { panelMode.value = 'write'; showDiffControls.value = true; focusDiffInstruction() }
+function retryPolishDiff() { showDiffControls.value = true; focusDiffInstruction() }
 function onCompositionEnd() {
   isComposing.value = false
   compositionPending.value = true
   setTimeout(() => { compositionPending.value = false }, 300)
 }
-
-async function handleKeydown(e: KeyboardEvent) {
-  if (e.isComposing || isComposing.value) return
-  // IME composition 刚结束时浏览器可能合成一个 Enter keydown，
-  // 这里忽略该次事件，防止按空格选词时误触发发送。
-  if (compositionPending.value) {
-    compositionPending.value = false
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      return
-    }
-  }
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    await sendMessage()
-  }
-}
-
-async function runCommand(command: string) {
-  if (!props.chapterContent && command !== 'continue') return
-
-  // 先加入一个空白 AI 消息，流式输出会逐字填充它
-  aiStore.addMessage('assistant', '')
-
-  await aiStore.streamWrite(props.bookId, props.chapterContent, command, (chunk) => {
-    aiStore.appendToLastAssistant(chunk)
-  }, undefined, props.chapterId)
-}
-
-async function runPolishDiff() {
-  const target = props.selectedText || props.chapterContent
-  if (!target || isDiffLoading.value || aiStore.isLoading) return
-  showDiffControls.value = true
-  showSideBySide.value = false
-  polishDiffResult.value = null
-  streamingDiffText.value = ''
-  isDiffLoading.value = true
-  try {
-    polishDiffResult.value = await aiStore.polishDiffStream(
-      props.bookId,
-      props.chapterContent || '',
-      props.selectedText || undefined,
-      props.chapterId,
-      diffInstruction.value,
-      (_chunk, fullText) => {
-        streamingDiffText.value = fullText
-      },
-    )
-    streamingDiffText.value = ''
-  } finally {
-    isDiffLoading.value = false
-  }
-}
-
-function applySuggestion(text: string) {
-  emit('applyText', text)
-}
-
-function acceptPolishDiff() {
-  if (!polishDiffResult.value?.revised) return
-  emit('replaceText', polishDiffResult.value.revised)
-  polishDiffResult.value = null
-  streamingDiffText.value = ''
-  showDiffControls.value = false
-  showSideBySide.value = false
-}
-
-function rejectPolishDiff() {
-  polishDiffResult.value = null
-  streamingDiffText.value = ''
-  showDiffControls.value = false
-  showSideBySide.value = false
-}
-
-function focusDiffInstruction() {
-  nextTick(() => {
-    diffInstructionRef.value?.focus()
-  })
-}
-
-function openDiffReview() {
-  showDiffControls.value = true
-  focusDiffInstruction()
-}
-
-function retryPolishDiff() {
-  showDiffControls.value = true
-  focusDiffInstruction()
-}
-
-function handleStreamSend() {
+async function sendChat() {
   if (!inputText.value.trim() || aiStore.isLoading) return
-  const msg = inputText.value
+  const message = inputText.value.trim()
   inputText.value = ''
-  aiStore.streamChat(props.bookId, msg, (chunk) => {
-    aiStore.appendToLastAssistant(chunk)
-  }, props.chapterContent, props.chapterId)
+  const version = contextVersion
+  await aiStore.streamChat(props.bookId, message, (chunk) => {
+    if (version === contextVersion) aiStore.appendToLastAssistant(chunk)
+  }, chapterContent.value, props.chapterId)
+}
+async function handleKeydown(event: KeyboardEvent) {
+  if (event.isComposing || isComposing.value) return
+  if (compositionPending.value) { compositionPending.value = false; if (event.key === 'Enter') { event.preventDefault(); return } }
+  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); await sendChat() }
 }
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden shrink-0 border-l animate-slide-in-right"
-    :style="{ backgroundColor: 'var(--surface)', borderLeftColor: 'var(--border-clr)' }">
-    <!-- Header -->
-    <div class="flex items-center justify-between gap-2 px-4 py-2.5 border-b"
-      :style="{ borderBottomColor: 'var(--border-clr)' }">
+  <div class="ai-panel-shell flex flex-col h-full overflow-hidden shrink-0 border-l w-full max-w-[100vw] animate-slide-in-right" :style="{ backgroundColor: 'var(--surface)', borderLeftColor: 'var(--border-clr)' }">
+    <div class="flex items-center justify-between gap-3 px-4 py-3 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
       <div class="flex items-center gap-2 min-w-0">
-        <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-brand text-white">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3v3m0 12v3M5.6 5.6l2.2 2.2m8.4 8.4 2.2 2.2M3 12h3m12 0h3M5.6 18.4l2.2-2.2m8.4-8.4 2.2-2.2"/>
-          </svg>
-        </div>
-        <span class="font-serif font-semibold text-sm shrink-0" :style="{ color: 'var(--text-primary)' }">AI 助手</span>
-        <select v-model="aiStore.selectedModel"
-          class="text-[11px] border rounded-lg px-2 py-1 focus:outline-none max-w-[124px] truncate appearance-none cursor-pointer transition-colors duration-150"
-          :style="{
-            backgroundColor: 'var(--surface-secondary)',
-            borderColor: 'var(--border-clr)',
-            color: 'var(--text-secondary)'
-          }">
-          <option :value="null">默认模型</option>
-          <option v-for="opt in MODEL_OPTIONS" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
+        <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand text-white" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3m0 12v3M5.6 5.6l2.2 2.2m8.4 8.4 2.2 2.2M3 12h3m12 0h3M5.6 18.4l2.2-2.2m8.4-8.4 2.2-2.2"/></svg></div>
+        <div class="min-w-0"><div class="font-serif font-semibold text-sm truncate" :style="{ color: 'var(--text-primary)' }">AI 助手</div><div class="text-[11px]" :style="{ color: 'var(--text-muted)' }">写作和讨论分开处理</div></div>
       </div>
-      <button @click="aiStore.closePanel()"
-        class="shrink-0 rounded-lg p-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]"
-        :style="{ color: 'var(--text-muted)' }"
-        aria-label="关闭 AI 助手">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-      </button>
-    </div>
-
-    <!-- Quick Actions -->
-    <div class="px-4 py-3 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
-      <div class="text-[11px] font-medium mb-2 tracking-wide" :style="{ color: 'var(--text-muted)' }">快捷操作</div>
-      <div class="flex flex-wrap gap-1.5">
-        <button @click="runCommand('continue')" :disabled="aiStore.isLoading" class="chip">续写</button>
-        <button @click="runCommand('improve')" :disabled="aiStore.isLoading" class="chip">润色</button>
-        <button @click="openDiffReview" :disabled="aiStore.isLoading || !diffTargetReady" class="chip chip-accent">Diff 润色</button>
-        <button @click="runCommand('fix')" :disabled="aiStore.isLoading" class="chip">校对</button>
-        <button @click="runCommand('summarize')" :disabled="aiStore.isLoading" class="chip">摘要</button>
+      <div class="flex items-center gap-2 shrink-0">
+        <select v-model="aiStore.selectedModel" aria-label="选择 AI 模型" class="text-[11px] border rounded-lg px-2 py-1 focus:outline-none max-w-[116px] truncate appearance-none cursor-pointer" :style="{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }"><option :value="null">默认模型</option><option v-for="option in MODEL_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option></select>
+        <button type="button" @click="aiStore.closePanel()" class="shrink-0 rounded-lg p-2 transition-colors duration-150 hover:bg-[var(--surface-hover)]" :style="{ color: 'var(--text-muted)' }" aria-label="关闭 AI 助手"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
       </div>
     </div>
-
-    <!-- Chat Messages -->
-    <div class="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
-      <div v-if="aiStore.chatMessages.length === 0 && !showDiffControls && !polishDiffResult && !isDiffLoading" class="text-center py-10">
-        <p class="font-serif text-sm" :style="{ color: 'var(--text-secondary)' }">在下方输入问题与 AI 对话</p>
-        <p class="text-xs mt-1.5" :style="{ color: 'var(--text-muted)' }">或使用上方快捷操作</p>
-      </div>
-
-      <div v-if="showDiffControls" class="rounded-xl border p-3.5 space-y-2.5"
-        :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
-        <div class="flex items-center justify-between gap-2">
-          <div>
-            <div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">Diff 润色要求</div>
-            <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ diffTargetLabel }}</div>
-          </div>
-          <button @click="runPolishDiff" :disabled="isDiffLoading || aiStore.isLoading || !diffTargetReady"
-            class="btn-accent text-xs px-2.5 py-1.5 shrink-0">
-            {{ isDiffLoading ? '流式生成中...' : polishDiffResult ? '重新生成' : '生成审阅' }}
-          </button>
-        </div>
-        <textarea
-          ref="diffInstructionRef"
-          v-model="diffInstruction"
-          rows="3"
-          placeholder="更有画面感、压缩节奏、保留人物语气"
-          class="w-full text-xs border rounded-lg px-3 py-2 resize-none outline-none transition-colors duration-150 focus:ring-2 focus:ring-brand/25"
-          :style="{
-            backgroundColor: 'var(--surface)',
-            borderColor: 'var(--border-clr)',
-            color: 'var(--text-primary)'
-          }"
-        ></textarea>
-      </div>
-
-      <div v-for="(msg, idx) in aiStore.chatMessages" :key="idx" class="animate-fade-up" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
-        <div :class="msg.role === 'user'
-          ? 'inline-block rounded-2xl rounded-tr-md px-3.5 py-2.5 text-sm max-w-[90%]'
-          : 'inline-block rounded-2xl rounded-tl-md px-3.5 py-2.5 text-sm max-w-[90%] whitespace-pre-wrap'"
-          :style="msg.role === 'user'
-            ? { backgroundColor: 'var(--ink)', color: 'var(--ink-text)' }
-            : { backgroundColor: 'var(--surface-secondary)', color: 'var(--text-primary)' }">
-          {{ msg.content }}
-        </div>
-        <div v-if="msg.role === 'assistant' && msg.content" class="mt-1.5 text-left">
-          <button @click="applySuggestion(msg.content)"
-            class="text-xs font-medium transition-colors hover:underline underline-offset-2"
-            :style="{ color: 'var(--brand-hover)' }">
-            插入到编辑器
-          </button>
-        </div>
-      </div>
-
-      <div v-if="isDiffLoading" class="rounded-xl border p-3.5"
-        :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
-        <div class="motion-ambient flex items-center gap-2 text-sm" :style="{ color: 'var(--text-secondary)' }">
-          <span class="inline-flex items-center gap-1">
-            <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand"></span>
-            <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.15s"></span>
-            <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.3s"></span>
-          </span>
-          正在流式生成 AI 润色...
-        </div>
-        <div class="text-xs mt-1 pl-6" :style="{ color: 'var(--text-muted)' }">
-          {{ streamingDiffText ? `已生成 ${streamingDiffText.length} 字，完成后自动生成 diff` : '等待模型开始返回内容' }}
-        </div>
-        <div v-if="streamingDiffText" class="mt-3 text-sm leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-48 overflow-y-auto font-serif"
-          :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">
-          {{ streamingDiffText }}<span class="motion-ambient animate-caret inline-block w-[2px] h-[1em] align-[-2px] ml-0.5 bg-brand"></span>
-        </div>
-      </div>
-
-      <div v-if="polishDiffResult" class="rounded-xl border p-3.5 space-y-3"
-        :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }">
-        <div class="flex items-center justify-between gap-2">
-          <div>
-            <div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">AI 修改审阅</div>
-            <div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">
-              {{ selectedText ? '接受后替换当前选中文本' : '接受后替换整章内容' }}
-            </div>
-          </div>
-          <div class="flex items-center gap-1.5 shrink-0">
-            <button @click="rejectPolishDiff" class="btn-secondary text-xs px-2.5 py-1">
-              拒绝
-            </button>
-            <button @click="retryPolishDiff" class="btn-secondary text-xs px-2.5 py-1">
-              调整重试
-            </button>
-            <button @click="acceptPolishDiff" class="btn-primary text-xs px-2.5 py-1">
-              接受
-            </button>
-          </div>
-        </div>
-
-        <div v-if="polishDiffResult.truncated" class="text-xs rounded-lg px-2.5 py-1.5"
-          :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
-          本次只审阅前 {{ polishDiffResult.processed_length }} 字，接受后会保留剩余
-          {{ (polishDiffResult.original_length || 0) - (polishDiffResult.processed_length || 0) }} 字原文。
-        </div>
-
-        <div class="grid grid-cols-3 gap-2 text-center text-xs">
-          <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold" :style="{ color: '#3e7a58' }">+{{ diffStats.addedChars }}</span>
-            <span class="ml-1">纯新增字</span>
-          </div>
-          <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold" :style="{ color: '#a0432c' }">{{ diffStats.removedChars > 0 ? `-${diffStats.removedChars}` : '0' }}</span>
-            <span class="ml-1">纯删除字</span>
-          </div>
-          <div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-            <span class="font-semibold" :style="{ color: 'var(--brand-hover)' }">{{ diffStats.replacements }}</span>
-            <span class="ml-1">处替换</span>
-          </div>
-        </div>
-
-        <div v-if="polishDiffResult.summary.length" class="space-y-1.5">
-          <div class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">主要改动</div>
-          <div v-for="(item, idx) in polishDiffResult.summary" :key="idx"
-            class="text-xs rounded-lg px-2.5 py-1.5"
-            :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
-            {{ item }}
-          </div>
-        </div>
-
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between gap-2">
-            <div class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">对比预览</div>
-            <div class="flex items-center gap-2.5 text-[11px]" :style="{ color: 'var(--text-muted)' }">
-              <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm" :style="{ backgroundColor: '#efd5cc' }"></span> 删除</span>
-              <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm" :style="{ backgroundColor: '#dde8d9' }"></span> 新增</span>
-            </div>
-          </div>
-          <div class="text-sm leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-64 overflow-y-auto font-serif"
-            :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">
-            <template v-for="(segment, idx) in polishDiffResult.segments" :key="idx">
-              <span v-if="segment.type === 'equal'">{{ segment.text }}</span>
-              <del v-else-if="segment.type === 'delete'"
-                class="px-0.5 rounded decoration-[#a0432c]"
-                :style="{ backgroundColor: '#f3dcd5', color: '#a0432c' }">{{ segment.text }}</del>
-              <ins v-else
-                class="px-0.5 rounded no-underline"
-                :style="{ backgroundColor: '#dfe8dc', color: '#3e6b48' }">{{ segment.text }}</ins>
-            </template>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <button @click="showSideBySide = !showSideBySide" class="text-xs transition-opacity hover:opacity-80"
-            :style="{ color: 'var(--text-muted)' }">
-            {{ showSideBySide ? '收起原文/润色后' : '展开原文/润色后' }}
-          </button>
-          <div v-if="showSideBySide" class="grid grid-cols-2 gap-2">
-            <div>
-              <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">原文</div>
-              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded-lg p-2.5 max-h-32 overflow-y-auto"
-                :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
-                {{ polishDiffResult.original }}
-              </div>
-            </div>
-            <div>
-              <div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">润色后</div>
-              <div class="text-xs leading-relaxed whitespace-pre-wrap rounded-lg p-2.5 max-h-32 overflow-y-auto"
-                :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">
-                {{ diffRevisedPreview }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Loading -->
-      <div v-if="aiStore.isLoading && !isDiffLoading" class="motion-ambient flex items-center gap-2 text-sm" :style="{ color: 'var(--text-muted)' }">
-        <span class="inline-flex items-center gap-1 px-1">
-          <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand"></span>
-          <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.15s"></span>
-          <span class="animate-typing-dot inline-block w-1.5 h-1.5 rounded-full bg-brand" style="animation-delay: 0.3s"></span>
-        </span>
-        AI 思考中...
-      </div>
-
-      <div v-if="aiStore.error" class="text-sm px-3.5 py-2.5 rounded-xl"
-        :style="{ backgroundColor: '#f9e3dd', color: '#a0432c' }">
-        {{ aiStore.error }}
-      </div>
+    <div class="grid grid-cols-2 gap-1 p-2 border-b" :style="{ borderBottomColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }" role="tablist" aria-label="AI 助手模式">
+      <button type="button" role="tab" :aria-selected="panelMode === 'write'" @click="panelMode = 'write'" class="rounded-lg px-3 py-2 text-xs font-semibold transition-colors" :style="panelMode === 'write' ? { backgroundColor: 'var(--surface)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-soft)' } : { color: 'var(--text-muted)' }">写作</button>
+      <button type="button" role="tab" :aria-selected="panelMode === 'chat'" @click="panelMode = 'chat'" class="rounded-lg px-3 py-2 text-xs font-semibold transition-colors" :style="panelMode === 'chat' ? { backgroundColor: 'var(--surface)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-soft)' } : { color: 'var(--text-muted)' }">问答</button>
     </div>
 
-    <!-- Input -->
-    <div class="border-t p-3.5" :style="{ borderTopColor: 'var(--border-clr)' }">
-      <div class="rounded-xl border transition-colors duration-150"
-        :style="{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border-clr)' }">
-        <textarea
-          v-model="inputText"
-          @keydown="handleKeydown"
-          @compositionstart="isComposing = true"
-          @compositionend="onCompositionEnd"
-          placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-          rows="2"
-          class="w-full text-sm px-3.5 py-2.5 resize-none outline-none bg-transparent border-none"
-          :style="{ color: 'var(--text-primary)' }"
-        ></textarea>
-        <div class="flex justify-between items-center px-3 pb-2.5">
-          <button @click="aiStore.clearChat()" class="text-xs transition-opacity hover:opacity-80" :style="{ color: 'var(--text-muted)' }">清空对话</button>
-          <div class="flex gap-2">
-            <button @click="handleStreamSend" :disabled="aiStore.isLoading || !inputText.trim()" class="btn-secondary text-xs px-3 py-1.5">
-              流式
-            </button>
-            <button @click="sendMessage" :disabled="aiStore.isLoading || !inputText.trim()" class="btn-primary text-xs px-3.5 py-1.5">
-              {{ aiStore.isLoading ? '...' : '发送' }}
-            </button>
-          </div>
-        </div>
-      </div>
+    <div ref="messagesRef" class="flex-1 overflow-y-auto min-h-0 p-4 space-y-3.5">
+      <template v-if="panelMode === 'write'">
+        <div class="rounded-xl border px-3 py-2.5" :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"><div class="flex items-center justify-between gap-2"><div class="text-[11px] font-semibold uppercase tracking-wide" :style="{ color: 'var(--text-muted)' }">当前写作范围</div><span class="text-[11px] font-medium" :style="{ color: 'var(--brand-hover)' }">{{ targetLabel }} · {{ targetLength }} 字</span></div><div v-if="targetPreview" class="mt-1.5 text-xs leading-5 line-clamp-2" :style="{ color: 'var(--text-secondary)' }">{{ targetPreview }}{{ targetPreview.length >= 72 ? '…' : '' }}</div><div v-else class="mt-1.5 text-xs" :style="{ color: 'var(--text-muted)' }">先在编辑器输入正文，AI 才能基于上下文工作。</div></div>
+        <div><div class="flex items-center justify-between mb-2"><div class="text-[11px] font-semibold uppercase tracking-wide" :style="{ color: 'var(--text-muted)' }">写作工具</div><span v-if="isBusy" class="inline-flex items-center gap-1 text-[11px]" :style="{ color: 'var(--brand-hover)' }"><span class="w-1.5 h-1.5 rounded-full bg-brand animate-pulse"></span>处理中</span></div><div class="grid grid-cols-2 gap-2"><button type="button" @click="runCommand('continue')" :disabled="isBusy || !props.chapterId" class="ai-action ai-action-primary">续写<span>接在章末</span></button><button type="button" @click="openDiffReview" :disabled="isBusy || !diffTargetReady" class="ai-action">润色<span>审阅后写回</span></button><button type="button" @click="runCommand('fix')" :disabled="isBusy || !chapterContent" class="ai-action">校对<span>错字与语病</span></button><button type="button" @click="runCommand('summarize')" :disabled="isBusy || !chapterContent" class="ai-action">摘要<span>提炼当前范围</span></button></div></div>
+        <div v-if="showDiffControls" class="rounded-xl border p-3.5 space-y-2.5" :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"><div class="flex items-center justify-between gap-2"><div><div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">Diff 润色</div><div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ diffTargetLabel }}</div></div><button type="button" @click="runPolishDiff" :disabled="isDiffLoading || aiStore.isLoading || !diffTargetReady" class="btn-accent text-xs px-2.5 py-1.5 shrink-0">{{ isDiffLoading ? '生成中...' : diffResult ? '重新生成' : '生成审阅' }}</button></div><textarea ref="diffInstructionRef" v-model="diffInstruction" rows="2" placeholder="例如：增强画面感，保留人物语气" class="w-full text-xs border rounded-lg px-3 py-2 resize-none outline-none transition-colors duration-150 focus:ring-2 focus:ring-brand/25" :style="{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-clr)', color: 'var(--text-primary)' }"></textarea></div>
+        <div v-if="writeResult" class="rounded-xl border p-3.5 space-y-3" :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"><div class="flex items-start justify-between gap-3"><div><div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">AI {{ commandLabel(writeResult.command) }}</div><div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ writeResult.description }}</div></div><span class="text-[11px] shrink-0" :style="{ color: writeResult.status === 'error' ? '#a0432c' : 'var(--text-muted)' }">{{ writeResult.status === 'streaming' ? '生成中' : writeResult.status === 'error' ? '生成失败' : writeResultStale ? '正文已变化' : '可审阅' }}</span></div><div class="rounded-lg px-3 py-2.5 text-sm leading-6 whitespace-pre-wrap max-h-72 overflow-y-auto font-serif" :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">{{ writeResult.text || 'AI 正在组织内容…' }}<span v-if="writeResult.status === 'streaming'" class="inline-block w-0.5 h-4 align-[-3px] ml-0.5 bg-brand animate-caret"></span></div><div class="flex items-center justify-between gap-2"><span class="text-[11px]" :style="{ color: 'var(--text-muted)' }">{{ writeResult.text.length }} 字</span><button v-if="writeResult.command !== 'summarize'" type="button" @click="previewWriteResult" :disabled="writeResult.status !== 'ready' || writeResultStale" class="btn-primary text-xs px-3 py-1.5">{{ writeResultStale ? '正文已变化，重新生成' : '预览写回' }}</button></div></div>
+        <div v-if="isDiffLoading" class="rounded-xl border p-3.5" :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"><div class="text-sm" :style="{ color: 'var(--text-secondary)' }">正在生成 Diff 审阅…</div><div class="text-xs mt-1" :style="{ color: 'var(--text-muted)' }">{{ streamingDiffText ? '已生成 ' + streamingDiffText.length + ' 字' : '正在读取当前范围' }}</div><div v-if="streamingDiffText" class="mt-3 text-sm leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-48 overflow-y-auto font-serif" :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }">{{ streamingDiffText }}<span class="inline-block w-0.5 h-4 align-[-3px] ml-0.5 bg-brand animate-caret"></span></div></div>
+        <div v-if="diffResult" class="rounded-xl border p-3.5 space-y-3" :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"><div class="flex items-start justify-between gap-3"><div><div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">Diff 审阅结果</div><div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ diffResultStale ? '正文已变化，这份结果不能写回' : '红色为删除，绿色为新增' }}</div></div><div class="flex items-center gap-1.5 shrink-0"><button type="button" @click="clearDiffReview" class="btn-secondary text-xs px-2.5 py-1">关闭</button><button type="button" @click="retryPolishDiff" class="btn-secondary text-xs px-2.5 py-1">重试</button></div></div><div class="grid grid-cols-3 gap-2 text-center text-xs"><div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }"><span class="font-semibold" :style="{ color: '#3e7a58' }">+{{ diffStats.addedChars }}</span><span class="ml-1">新增</span></div><div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }"><span class="font-semibold" :style="{ color: '#a0432c' }">-{{ diffStats.removedChars }}</span><span class="ml-1">删除</span></div><div class="py-1.5 border-y" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }"><span class="font-semibold" :style="{ color: 'var(--brand-hover)' }">{{ diffStats.replacements }}</span><span class="ml-1">替换</span></div></div><div class="text-sm leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-64 overflow-y-auto font-serif" :style="{ color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }"><template v-for="(segment, index) in diffResult.segments" :key="index"><span v-if="segment.type === 'equal'">{{ segment.text }}</span><del v-else-if="segment.type === 'delete'" class="px-0.5 rounded decoration-2" :style="{ backgroundColor: '#f3dcd5', color: '#a0432c', textDecorationColor: '#a0432c' }">{{ segment.text }}</del><ins v-else class="px-0.5 rounded no-underline" :style="{ backgroundColor: '#dfe8dc', color: '#3e6b48' }">{{ segment.text }}</ins></template></div><button type="button" @click="previewPolishDiff" :disabled="diffResultStale" class="w-full btn-primary text-xs py-2">{{ diffResultStale ? '正文已变化，无法写回' : '预览这次变更' }}</button><button type="button" @click="showSideBySide = !showSideBySide" class="text-xs transition-opacity hover:opacity-80" :style="{ color: 'var(--text-muted)' }">{{ showSideBySide ? '收起原文 / 修改后' : '展开原文 / 修改后' }}</button><div v-if="showSideBySide" class="grid grid-cols-2 gap-2"><div><div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">原文</div><div class="text-xs leading-relaxed whitespace-pre-wrap rounded-lg p-2.5 max-h-32 overflow-y-auto" :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">{{ diffResult.original }}</div></div><div><div class="text-xs mb-1" :style="{ color: 'var(--text-muted)' }">修改后</div><div class="text-xs leading-relaxed whitespace-pre-wrap rounded-lg p-2.5 max-h-32 overflow-y-auto" :style="{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }">{{ diffRevisedPreview }}</div></div></div></div>
+      </template>
+      <template v-else>
+        <div v-if="aiStore.chatMessages.length === 0" class="text-center py-10"><p class="font-serif text-sm" :style="{ color: 'var(--text-secondary)' }">把问题交给 AI，一起讨论情节、人物和设定</p><p class="text-xs mt-1.5" :style="{ color: 'var(--text-muted)' }">回答不会自动写入正文</p></div>
+        <div v-for="(message, index) in aiStore.chatMessages" :key="index" class="animate-fade-up" :class="message.role === 'user' ? 'text-right' : 'text-left'"><div :class="message.role === 'user' ? 'inline-block rounded-2xl rounded-tr-md px-3.5 py-2.5 text-sm max-w-[90%]' : 'inline-block rounded-2xl rounded-tl-md px-3.5 py-2.5 text-sm max-w-[90%] whitespace-pre-wrap'" :style="message.role === 'user' ? { backgroundColor: 'var(--ink)', color: 'var(--ink-text)' } : { backgroundColor: 'var(--surface-secondary)', color: 'var(--text-primary)' }">{{ message.content || (aiStore.isLoading && index === aiStore.chatMessages.length - 1 ? 'AI 正在思考…' : '') }}</div></div>
+        <div v-if="aiStore.isLoading" class="flex items-center gap-2 text-xs" :style="{ color: 'var(--text-muted)' }"><span class="w-1.5 h-1.5 rounded-full bg-brand animate-pulse"></span>正在生成回答</div>
+      </template>
+      <div v-if="aiStore.error" class="rounded-xl px-3 py-2.5 text-sm" :style="{ backgroundColor: '#f9e3dd', color: '#a0432c' }">{{ aiStore.error }}</div>
     </div>
+    <div v-if="panelMode === 'chat'" class="border-t p-3.5" :style="{ borderTopColor: 'var(--border-clr)' }"><div class="rounded-xl border transition-colors duration-150" :style="{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border-clr)' }"><textarea v-model="inputText" @keydown="handleKeydown" @compositionstart="isComposing = true" @compositionend="onCompositionEnd" placeholder="输入问题，Enter 发送，Shift+Enter 换行" rows="2" class="w-full text-sm px-3.5 py-2.5 resize-none outline-none bg-transparent border-none" :style="{ color: 'var(--text-primary)' }"></textarea><div class="flex justify-between items-center px-3 pb-2.5"><button type="button" @click="aiStore.clearChat()" class="text-xs transition-opacity hover:opacity-80" :style="{ color: 'var(--text-muted)' }">清空问答</button><button type="button" @click="sendChat" :disabled="aiStore.isLoading || !inputText.trim()" class="btn-primary text-xs px-3.5 py-1.5">{{ aiStore.isLoading ? '生成中...' : '发送' }}</button></div></div></div>
+    <div v-else class="border-t px-4 py-2.5 text-[11px]" :style="{ borderTopColor: 'var(--border-clr)', color: 'var(--text-muted)' }">选择一个写作工具，结果会先在这里审阅，再写回正文。</div>
   </div>
 </template>
+
+<style scoped>
+.ai-action { display: flex; min-height: 52px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; border: 1px solid var(--border-clr); border-radius: 10px; padding: 8px 11px; color: var(--text-primary); background: var(--surface); text-align: left; transition: border-color 150ms ease, background-color 150ms ease, opacity 150ms ease; }
+.ai-action span { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.ai-action:hover:not(:disabled) { border-color: var(--brand); background: var(--brand-softer); }
+.ai-action:disabled { cursor: not-allowed; opacity: 0.45; }
+.ai-action-primary { border-color: var(--brand); background: var(--brand-softer); }
+
+@media (max-width: 768px) {
+  .ai-panel-shell {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 60;
+    width: min(100vw, 420px) !important;
+    box-shadow: var(--shadow-lift);
+  }
+}
+</style>
