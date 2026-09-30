@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 
 import { DRIZZLE, type Database } from '../db/drizzle.module';
 import { users, type User } from '../db/schema';
@@ -62,9 +63,12 @@ export class AuthService {
 
   async createUser(email: string, password: string, name: string | null): Promise<User> {
     const hashed = await this.hashPassword(password);
+    const rawBase = (name || email.split('@')[0] || 'author').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const base = rawBase.replace(/^-+|-+$/g, '').slice(0, 24) || 'author';
+    const username = `${base}-${randomUUID().slice(0, 8)}`;
     const [user] = await this.db
       .insert(users)
-      .values({ email, password: hashed, name: name ?? '' })
+      .values({ email, password: hashed, name: name ?? '', username })
       .returning();
     return user;
   }
@@ -72,5 +76,11 @@ export class AuthService {
 
 /** API 返回的用户形状（UserResponse：不含密码哈希） */
 export function toUserResponse(user: User) {
-  return { id: user.id, email: user.email, name: user.name, avatar: user.avatar };
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    avatar: user.avatar,
+    ...(user.username ? { username: user.username, bio: user.bio ?? '' } : {}),
+  };
 }
