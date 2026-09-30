@@ -86,7 +86,7 @@ ALTER TABLE "books" ADD COLUMN "comment_count" integer DEFAULT 0 NOT NULL;--> st
 ALTER TABLE "books" ADD COLUMN "allow_comments" boolean DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "username" text;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "bio" text DEFAULT '' NOT NULL;--> statement-breakpoint
-UPDATE "users" SET "username" = 'author-' || substr(replace("id"::text, '-', ''), 1, 8) WHERE "username" IS NULL;--> statement-breakpoint
+UPDATE "users" SET "username" = replace("id"::text, '-', '') WHERE "username" IS NULL;--> statement-breakpoint
 ALTER TABLE "users" ALTER COLUMN "username" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "blocks" ADD CONSTRAINT "blocks_blocker_id_users_id_fk" FOREIGN KEY ("blocker_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "blocks" ADD CONSTRAINT "blocks_blocked_id_users_id_fk" FOREIGN KEY ("blocked_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

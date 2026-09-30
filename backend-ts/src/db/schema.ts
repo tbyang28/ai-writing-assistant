@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -205,7 +206,7 @@ export const comments = pgTable(
     authorId: uuid('author_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    parentId: uuid('parent_id'),
+    parentId: uuid('parent_id').references((): AnyPgColumn => comments.id, { onDelete: 'set null' }),
     content: text('content').notNull(),
     isPinned: boolean('is_pinned').notNull().default(false),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),

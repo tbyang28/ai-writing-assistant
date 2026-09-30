@@ -63,14 +63,24 @@ export class AuthService {
 
   async createUser(email: string, password: string, name: string | null): Promise<User> {
     const hashed = await this.hashPassword(password);
-    const rawBase = (name || email.split('@')[0] || 'author').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const base = rawBase.replace(/^-+|-+$/g, '').slice(0, 24) || 'author';
-    const username = `${base}-${randomUUID().slice(0, 8)}`;
-    const [user] = await this.db
-      .insert(users)
-      .values({ email, password: hashed, name: name ?? '', username })
-      .returning();
-    return user;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const username = `author-${Buffer.from(randomUUID().replaceAll('-', ''), 'hex').toString('base64url')}`;
+      try {
+        const [user] = await this.db
+          .insert(users)
+          .values({ email, password: hashed, name: name ?? '', username })
+          .returning();
+        return user;
+      } catch (error) {
+        // Drizzle wraps the PostgreSQL error in cause; only username collisions
+        // warrant a new candidate. Email conflicts and other failures propagate.
+        const pgError = (error as { cause?: { code?: string; constraint?: string } }).cause;
+        if (pgError?.code !== '23505' || pgError.constraint !== 'users_username_unique' || attempt === 4) {
+          throw error;
+        }
+      }
+    }
+    throw new Error('Unable to allocate a unique username');
   }
 }
 
