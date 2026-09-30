@@ -6,15 +6,29 @@ import './assets/main.css'
 
 import AuthView from './views/AuthView.vue'
 import LandingView from './views/LandingView.vue'
-import HomeView from './views/HomeView.vue'
-import BooksView from './views/BooksView.vue'
-import InspirationsView from './views/InspirationsView.vue'
-import StatsView from './views/StatsView.vue'
-import EditorView from './views/EditorView.vue'
 
-function requireAuth(to: any, _from: any, next: any) {
+// 路由级懒加载：登录后各页面（尤其最重的编辑器）按需分包，落地/登录页不再背全量 chunk
+const HomeView = () => import('./views/HomeView.vue')
+const BooksView = () => import('./views/BooksView.vue')
+const InspirationsView = () => import('./views/InspirationsView.vue')
+const StatsView = () => import('./views/StatsView.vue')
+const EditorView = () => import('./views/EditorView.vue')
+
+function isTokenValid() {
   const token = localStorage.getItem('token')
-  if (!token) {
+  if (!token) return false
+  try {
+    // 只读 exp 做客户端预判（签名仍由服务端校验）
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload.exp === 'number' && payload.exp * 1000 > Date.now()
+  } catch {
+    return !!token // 解析失败时放行，交给 API 401 拦截
+  }
+}
+
+function requireAuth(_to: any, _from: any, next: any) {
+  if (!isTokenValid()) {
+    localStorage.removeItem('token')
     next('/auth')
   } else {
     next()
@@ -22,8 +36,7 @@ function requireAuth(to: any, _from: any, next: any) {
 }
 
 function redirectIfAuthed(_to: any, _from: any, next: any) {
-  const token = localStorage.getItem('token')
-  next(token ? '/home' : undefined)
+  next(isTokenValid() ? '/home' : undefined)
 }
 
 const router = createRouter({

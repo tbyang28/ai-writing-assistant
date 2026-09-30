@@ -39,8 +39,8 @@ export default {
       },
       fontFamily: {
         // Claude 风格：正文/UI 用 sans，标题与正文写作区用 serif（宋体感）
-        sans: ['"Inter"', '"Noto Sans SC"', 'system-ui', 'sans-serif'],
-        serif: ['"Newsreader"', '"Noto Serif SC"', 'Georgia', 'serif'],
+        sans: ['"Inter"', 'system-ui', '-apple-system', '"PingFang SC"', '"Noto Sans SC"', '"Microsoft YaHei"', 'sans-serif'],
+        serif: ['"Newsreader"', '"Songti SC"', '"STSong"', '"Noto Serif SC"', '"SimSun"', 'Georgia', 'serif'],
       },
       borderRadius: {
         'claude': '0.75rem',

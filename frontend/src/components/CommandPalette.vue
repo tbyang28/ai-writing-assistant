@@ -88,6 +88,10 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     e.preventDefault()
     closePalette()
+  } else if (e.key === 'Tab') {
+    // 轻量 focus trap：焦点锁在面板输入框，不逃逸到页面下层
+    e.preventDefault()
+    inputRef.value?.focus()
   } else if (e.key === 'ArrowDown') {
     e.preventDefault()
     activeIndex.value = Math.min(activeIndex.value + 1, filtered.value.length - 1)

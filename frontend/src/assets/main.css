@@ -1,3 +1,19 @@
+/* 自托管拉丁字体（原 Google Fonts 外链在国内极慢，阻塞首屏） */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/newsreader-latin.woff2') format('woff2');
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -55,7 +71,7 @@
   body {
     background-color: var(--bg-page);
     color: var(--text-primary);
-    font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   }
 
   /* 文本选择色用 Claude 橙的淡底 */

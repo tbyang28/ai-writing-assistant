@@ -29,27 +29,34 @@ const animTotalWords = useCountUp(() => totalWords.value)
 const animChapters = useCountUp(() => totalChapters.value)
 
 // 12 周热力图：last_84_days[date] -> wordCount
+// 注意：后端按 UTC 日分桶（updated_at AT TIME ZONE 'UTC'），这里必须同样用 UTC 生成格子，
+// 否则 UTC+8 用户会错位一天、今天的数据落不进格子。
 interface DayCell { date: string; words: number; level: 0 | 1 | 2 | 3 | 4 }
 const heatWeeks = computed<DayCell[][]>(() => {
   const raw: { date: string; wordCount: number }[] = stats.value?.last_7_days || []
   const map = new Map(raw.map((d) => [d.date, d.wordCount || 0]))
   const maxWords = Math.max(...raw.map((d) => d.wordCount || 0), 1)
 
+  // 锚点优先用后端返回的 UTC 今天（stats.today），拿不到再用本地 UTC 换算
+  const utcKey = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  const anchor = (stats.value?.today as string) || utcKey(new Date())
+
   const days: DayCell[] = []
-  const today = new Date()
+  const anchorDate = new Date(`${anchor}T00:00:00.000Z`)
   for (let i = 83; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(today.getDate() - i)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const d = new Date(anchorDate)
+    d.setUTCDate(anchorDate.getUTCDate() - i)
+    const key = utcKey(d)
     const words = map.get(key) || 0
     const r = words / maxWords
     const level: DayCell['level'] = words === 0 ? 0 : r < 0.25 ? 1 : r < 0.5 ? 2 : r < 0.75 ? 3 : 4
     days.push({ date: key, words, level })
   }
 
-  // 从周一开列：用首格的星期把列补齐
-  const first = new Date(days[0].date)
-  const pad = (first.getDay() + 6) % 7 // 周一 = 0
+  // 从周一开列：用首格的星期把列补齐（date 是 UTC 日串，必须用 getUTCDay）
+  const first = new Date(`${days[0].date}T00:00:00.000Z`)
+  const pad = (first.getUTCDay() + 6) % 7 // 周一 = 0
   const padded: (DayCell | null)[] = [...Array(pad).fill(null), ...days]
   const weeks: DayCell[][] = []
   for (let i = 0; i < padded.length; i += 7) {
