@@ -60,6 +60,14 @@ const SEARCH_CALL: LlmResult = {
   toolCalls: [{ id: 'call_1', name: 'search_story', argumentsJson: '{"query":"剑法"}' }],
 };
 
+/** 最近一次 LLM 调用里回灌的某工具结果消息 */
+function toolResultOf(name: string): string {
+  const msg = [...llmCalls].reverse().flatMap((c) => c.messages).find(
+    (m) => m.role === 'tool' && m.toolName === name,
+  );
+  return msg?.content ?? '';
+}
+
 afterAll(async () => {
   await app?.close();
   await closeTestDb();
@@ -253,5 +261,251 @@ describe('POST /api/ai/agent/stream（SSE）', () => {
       .map((f) => f.data.text)
       .join('');
     expect(answer).toBe('李四是主角，正在流浪。');
+  });
+});
+
+describe('Agent 工具箱：get_chapter / save_inspiration / diff_edit', () => {
+  it('get_chapter 读整章正文；order 指定章节', async () => {
+    await resetApp({
+      chat: scriptedChat([
+        { answer: '', toolCalls: [{ id: 'g1', name: 'get_chapter', argumentsJson: '{"order":1}' }] },
+        { answer: '读完第一章了。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools-1@test.dev');
+    const book = await createBook(auth);
+    await createChapter(auth, book.id, '第一章正文：少年走出山门。');
+
+    const res = await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '第一章讲了什么？' });
+
+    expect(res.status).toBe(200);
+    expect(toolResultOf('get_chapter')).toContain('第一章正文：少年走出山门。');
+  });
+
+  it('save_inspiration 真正把灵感写进数据库（tag 契约与设定库一致）', async () => {
+    await resetApp({
+      chat: scriptedChat([
+        {
+          answer: '',
+          toolCalls: [
+            {
+              id: 's1',
+              name: 'save_inspiration',
+              argumentsJson: '{"title":"剑灵设定","content":"剑里住着千年剑灵","tags":["设定","伏笔"]}',
+            },
+          ],
+        },
+        { answer: '已记下这个灵感。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools-2@test.dev');
+    const book = await createBook(auth);
+
+    await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '这个设定不错，记下来' });
+
+    // 经公开 API 验证落库（tags 是 JSON 字符串契约）
+    const list = await request(app!.getHttpServer()).get('/api/inspirations').set(auth);
+    expect(list.status).toBe(200);
+    const rows = (list.body as Array<{ title: string; content: string; tags: string }>).filter(
+      (i) => i.title === '剑灵设定',
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].content).toBe('剑里住着千年剑灵');
+    expect(JSON.parse(rows[0].tags)).toEqual(['设定', '伏笔']);
+    expect(toolResultOf('save_inspiration')).toContain('已存入灵感库');
+  });
+
+  it('diff_edit 产出逐字差异报告，且不动数据库里的章节', async () => {
+    await resetApp({
+      chat: scriptedChat([
+        {
+          answer: '',
+          toolCalls: [
+            {
+              id: 'd1',
+              name: 'diff_edit',
+              argumentsJson: JSON.stringify({ original: '天非常黑', revised: '天黑得像墨' }),
+            },
+          ],
+        },
+        { answer: '改动在上面，看看是否采纳。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools-3@test.dev');
+    const book = await createBook(auth);
+    const chapterId = await createChapter(auth, book.id, '天非常黑。');
+
+    await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '帮我把「天非常黑」改得生动点' });
+
+    const report = toolResultOf('diff_edit');
+    expect(report).toContain('将「非常黑」改为「黑得像墨」');
+    expect(report).toContain('共 1 处修改');
+
+    // 章节正文必须原封不动（agent 只有提案权，没有改稿权）
+    const ch = await request(app!.getHttpServer()).get(`/api/chapters/${chapterId}`).set(auth);
+    expect(ch.body.content).toBe('天非常黑。');
+  });
+
+  it('diff_edit 的 original 与 revised 相同 → 明确报告「没有改动」', async () => {
+    await resetApp({
+      chat: scriptedChat([
+        {
+          answer: '',
+          toolCalls: [
+            { id: 'd2', name: 'diff_edit', argumentsJson: '{"original":"同上","revised":"同上"}' },
+          ],
+        },
+        { answer: '无改动。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools-4@test.dev');
+    const book = await createBook(auth);
+
+    await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '测试' });
+
+    expect(toolResultOf('diff_edit')).toContain('没有任何改动');
+  });
+});
+
+describe('Agent 工具箱（二）：list_chapters / get_character_relations / list_inspirations / save_character', () => {
+  it('list_chapters 给出全书结构目录（不含正文）', async () => {
+    await resetApp({
+      chat: scriptedChat([
+        { answer: '', toolCalls: [{ id: 'l1', name: 'list_chapters', argumentsJson: '{}' }] },
+        { answer: '全书共两章。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools2-1@test.dev');
+    const book = await createBook(auth);
+    await createChapter(auth, book.id, '第一段剧情。');
+    await createChapter(auth, book.id, '第二段剧情。');
+
+    await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '现在写到哪了？' });
+
+    const result = toolResultOf('list_chapters');
+    expect(result).toContain('第1章');
+    expect(result).toContain('第2章');
+    expect(result).not.toContain('第一段剧情'); // 目录不含正文
+  });
+
+  it('get_character_relations 把 id 解析成人物名', async () => {
+    await resetApp({
+      chat: scriptedChat([
+        { answer: '', toolCalls: [{ id: 'r1', name: 'get_character_relations', argumentsJson: '{}' }] },
+        { answer: '张三是李四的师父。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools2-2@test.dev');
+    const book = await createBook(auth);
+    const a = await request(app!.getHttpServer())
+      .post(`/api/books/${book.id}/characters`)
+      .set(auth)
+      .send({ name: '张三', role: '师父', bio: '剑客' });
+    const b = await request(app!.getHttpServer())
+      .post(`/api/books/${book.id}/characters`)
+      .set(auth)
+      .send({ name: '李四', role: '主角', bio: '徒弟' });
+    await request(app!.getHttpServer())
+      .post(`/api/books/${book.id}/character-relations`)
+      .set(auth)
+      .send({
+        source_character_id: a.body.id,
+        target_character_id: b.body.id,
+        relation_type: 'mentor',
+        description: '亦师亦父',
+        strength: 4,
+      });
+
+    await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '张三和李四是什么关系？' });
+
+    const result = toolResultOf('get_character_relations');
+    expect(result).toContain('张三 —mentor');
+    expect(result).toContain('李四');
+    expect(result).toContain('亦师亦父');
+  });
+
+  it('save_character 入库 + 同名查重不重复创建', async () => {
+    await resetApp({
+      // 第一轮建人物；第三轮再「建」同名人物验证查重
+      chat: scriptedChat([
+        {
+          answer: '',
+          toolCalls: [
+            { id: 'c1', name: 'save_character', argumentsJson: '{"name":"王五","role":"反派","bio":"黑市头目"}' },
+          ],
+        },
+        {
+          answer: '',
+          toolCalls: [
+            { id: 'c2', name: 'save_character', argumentsJson: '{"name":"王五","role":"主角"}' },
+          ],
+        },
+        { answer: '王五已经在库里了。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools2-3@test.dev');
+    const book = await createBook(auth);
+
+    await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '把反派王五存进人物库' });
+
+    // 公开 API 回读：只有一行，且保留第一次的角色/简介
+    const list = await request(app!.getHttpServer())
+      .get(`/api/books/${book.id}/characters`)
+      .set(auth);
+    const rows = (list.body as Array<{ name: string; role: string; bio: string }>).filter(
+      (c) => c.name === '王五',
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].role).toBe('反派');
+    expect(rows[0].bio).toBe('黑市头目');
+
+    const msgs = llmCalls.map((c) => c.messages).flat();
+    const dupMsg = msgs.find((m) => m.role === 'tool' && m.content.includes('已在设定库中'));
+    expect(dupMsg).toBeTruthy();
+  });
+
+  it('list_inspirations 能回读之前存下的点子（含 tags）', async () => {
+    await resetApp({
+      chat: scriptedChat([
+        { answer: '', toolCalls: [{ id: 'i1', name: 'list_inspirations', argumentsJson: '{}' }] },
+        { answer: '灵感库里有一条关于剑灵的设定。' },
+      ]),
+    });
+    const { auth } = await registerUser(app!, 'agent-tools2-4@test.dev');
+    const book = await createBook(auth);
+    await request(app!.getHttpServer())
+      .post(`/api/books/${book.id}/inspirations`)
+      .set(auth)
+      .send({ title: '剑灵设定', content: '剑里住着千年剑灵', tags: ['设定'] });
+
+    await request(app!.getHttpServer())
+      .post('/api/ai/agent')
+      .set(auth)
+      .send({ book_id: book.id, message: '我之前存过什么点子？' });
+
+    const result = toolResultOf('list_inspirations');
+    expect(result).toContain('剑灵设定');
+    expect(result).toContain('[设定]');
   });
 });
