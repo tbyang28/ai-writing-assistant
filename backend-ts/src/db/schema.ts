@@ -1,4 +1,16 @@
-import { index, integer, pgTable, text, timestamp, uuid, vector } from 'drizzle-orm/pg-core';
+import {
+  type AnyPgColumn,
+  boolean,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  vector,
+} from 'drizzle-orm/pg-core';
 
 /**
  * 8 张表 —— 逐字段镜像 Python 侧 models/*。
@@ -26,9 +38,11 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   password: text('password').notNull(),
   name: text('name').notNull().default(''),
+  username: text('username').notNull(),
+  bio: text('bio').notNull().default(''),
   avatar: text('avatar').notNull().default(''),
   ...timestamps,
-});
+}, (table) => [uniqueIndex('users_username_unique').on(table.username)]);
 
 export const books = pgTable('books', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -37,6 +51,14 @@ export const books = pgTable('books', {
   description: text('description').notNull().default(''),
   status: text('status').notNull().default('DRAFT'), // DRAFT | SERIAL | FINISHED
   wordCount: integer('word_count').notNull().default(0),
+  visibility: text('visibility').notNull().default('PRIVATE'), // PRIVATE | PUBLIC
+  genre: text('genre').notNull().default(''),
+  tags: text('tags').notNull().default('[]'),
+  publishedAt: timestamp('published_at', { withTimezone: true, mode: 'date' }),
+  readCount: integer('read_count').notNull().default(0),
+  likeCount: integer('like_count').notNull().default(0),
+  commentCount: integer('comment_count').notNull().default(0),
+  allowComments: boolean('allow_comments').notNull().default(true),
   ownerId: uuid('owner_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
@@ -125,6 +147,142 @@ export const documentChunks = pgTable(
   (table) => [index('document_chunks_book_id_idx').on(table.bookId)],
 );
 
+export const follows = pgTable(
+  'follows',
+  {
+    followerId: uuid('follower_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    followingId: uuid('following_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    ...timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.followerId, table.followingId] }),
+    index('follows_following_id_idx').on(table.followingId),
+  ],
+);
+
+export const bookLikes = pgTable(
+  'book_likes',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    bookId: uuid('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    ...timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.bookId] }), index('book_likes_book_id_idx').on(table.bookId)],
+);
+
+export const bookFavorites = pgTable(
+  'book_favorites',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    bookId: uuid('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    ...timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.bookId] }),
+    index('book_favorites_user_id_idx').on(table.userId),
+  ],
+);
+
+export const comments = pgTable(
+  'comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookId: uuid('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    chapterId: uuid('chapter_id').references(() => chapters.id, { onDelete: 'cascade' }),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    parentId: uuid('parent_id').references((): AnyPgColumn => comments.id, { onDelete: 'set null' }),
+    content: text('content').notNull(),
+    isPinned: boolean('is_pinned').notNull().default(false),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+    ...timestamps,
+  },
+  (table) => [
+    index('comments_book_id_idx').on(table.bookId, table.createdAt),
+    index('comments_chapter_id_idx').on(table.chapterId, table.createdAt),
+  ],
+);
+
+export const readingProgress = pgTable(
+  'reading_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    bookId: uuid('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    chapterId: uuid('chapter_id')
+      .notNull()
+      .references(() => chapters.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.bookId] })],
+);
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recipientId: uuid('recipient_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    type: text('type').notNull(),
+    bookId: uuid('book_id').references(() => books.id, { onDelete: 'cascade' }),
+    commentId: uuid('comment_id').references(() => comments.id, { onDelete: 'cascade' }),
+    readAt: timestamp('read_at', { withTimezone: true, mode: 'date' }),
+    ...timestamps,
+  },
+  (table) => [index('notifications_recipient_id_idx').on(table.recipientId, table.createdAt)],
+);
+
+export const reports = pgTable(
+  'reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    targetType: text('target_type').notNull(),
+    targetId: uuid('target_id').notNull(),
+    reason: text('reason').notNull(),
+    status: text('status').notNull().default('OPEN'),
+    ...timestamps,
+  },
+  (table) => [index('reports_target_idx').on(table.targetType, table.targetId)],
+);
+
+export const blocks = pgTable(
+  'blocks',
+  {
+    blockerId: uuid('blocker_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    blockedId: uuid('blocked_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    ...timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.blockerId, table.blockedId] })],
+);
+
 /** 传给 drizzle() 的 schema 集合（关系 API / 迁移器都要用） */
 export const schema = {
   users,
@@ -135,6 +293,14 @@ export const schema = {
   characterRelations,
   inspirations,
   documentChunks,
+  follows,
+  bookLikes,
+  bookFavorites,
+  comments,
+  readingProgress,
+  notifications,
+  reports,
+  blocks,
 };
 
 export type User = typeof users.$inferSelect;
@@ -145,3 +311,11 @@ export type Character = typeof characters.$inferSelect;
 export type CharacterRelation = typeof characterRelations.$inferSelect;
 export type Inspiration = typeof inspirations.$inferSelect;
 export type DocumentChunk = typeof documentChunks.$inferSelect;
+export type Follow = typeof follows.$inferSelect;
+export type BookLike = typeof bookLikes.$inferSelect;
+export type BookFavorite = typeof bookFavorites.$inferSelect;
+export type Comment = typeof comments.$inferSelect;
+export type ReadingProgress = typeof readingProgress.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
+export type Report = typeof reports.$inferSelect;
+export type Block = typeof blocks.$inferSelect;

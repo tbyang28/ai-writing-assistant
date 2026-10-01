@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { BooksModule } from './books/books.module';
 import { DrizzleModule } from './db/drizzle.module';
 import { RootController } from './health/root.controller';
+import { CommunityModule } from './community/community.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { RootController } from './health/root.controller';
     AuthModule,
     BooksModule,
     AiModule,
+    CommunityModule,
   ],
   controllers: [RootController],
 })

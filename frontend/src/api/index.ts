@@ -28,7 +28,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && window.location.pathname !== '/auth') {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      window.location.href = '/auth'
+      window.location.href = `/auth?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
     }
     return Promise.reject(error)
   },

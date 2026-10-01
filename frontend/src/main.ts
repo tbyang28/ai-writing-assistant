@@ -26,10 +26,10 @@ function isTokenValid() {
   }
 }
 
-function requireAuth(_to: any, _from: any, next: any) {
+function requireAuth(to: any, _from: any, next: any) {
   if (!isTokenValid()) {
     localStorage.removeItem('token')
-    next('/auth')
+    next({ path: '/auth', query: { redirect: to.fullPath } })
   } else {
     next()
   }
@@ -44,6 +44,12 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'landing', component: LandingView },
     { path: '/auth', name: 'auth', component: AuthView, beforeEnter: redirectIfAuthed },
+    { path: '/discover', component: () => import('./views/DiscoverView.vue') },
+    { path: '/community/books/:id', component: () => import('./views/PublicBookView.vue') },
+    { path: '/community/books/:id/read/:chapterId', component: () => import('./views/ReaderView.vue') },
+    { path: '/community/users/:id', component: () => import('./views/ProfileView.vue') },
+    { path: '/bookshelf', component: () => import('./views/BookshelfView.vue'), beforeEnter: requireAuth },
+    { path: '/notifications', component: () => import('./views/NotificationsView.vue'), beforeEnter: requireAuth },
     { path: '/home', name: 'home', component: HomeView, beforeEnter: requireAuth },
     { path: '/books', name: 'books', component: BooksView, beforeEnter: requireAuth },
     { path: '/inspirations', name: 'inspirations', component: InspirationsView, beforeEnter: requireAuth },

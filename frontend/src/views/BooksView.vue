@@ -2,11 +2,32 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookStore, type Book } from '@/stores/book'
+import { useCommunityStore, communityError } from '@/stores/community'
 import { vReveal } from '@/composables/useReveal'
 import { vSpotlight } from '@/composables/useCursorFx'
 
 const router = useRouter()
 const bookStore = useBookStore()
+const community = useCommunityStore()
+const publishingBook = ref<Book | null>(null)
+const publication = ref({ visibility: 'PUBLIC' as 'PUBLIC' | 'PRIVATE', genre: '', tags: '', description: '', cover: '', status: 'SERIAL' as 'SERIAL' | 'FINISHED', allow_comments: true })
+const publishing = ref(false), publishError = ref('')
+function openPublication(book: Book) {
+  publishingBook.value = book; publishError.value = ''
+  let tags: string[] = []
+  try { tags = typeof book.tags === 'string' ? JSON.parse(book.tags) : book.tags || [] } catch { tags = [] }
+  publication.value = { visibility: 'PUBLIC', genre: book.genre || '', tags: tags.join(', '), description: book.description || '', cover: book.cover || '', status: book.status === 'FINISHED' ? 'FINISHED' : 'SERIAL', allow_comments: book.allow_comments !== false }
+}
+async function publish() {
+  if (!publishingBook.value || publishing.value) return
+  publishing.value = true; publishError.value = ''
+  try {
+    const id = publishingBook.value.id
+    await bookStore.updateBook(id, { description: publication.value.description, cover: publication.value.cover, status: publication.value.status })
+    await community.publishBook(id, { visibility: publication.value.visibility, genre: publication.value.genre.trim(), tags: [...new Set(publication.value.tags.split(/[,，]/).map(tag => tag.trim()).filter(Boolean))], allow_comments: publication.value.allow_comments, status: publication.value.status })
+    await bookStore.fetchBooks(); publishingBook.value = null
+  } catch(e) { publishError.value = communityError(e) } finally { publishing.value = false }
+}
 
 const keyword = ref('')
 const showNewBookModal = ref(false)
@@ -155,7 +176,7 @@ function formatWordCount(count?: number | null) {
                   <span class="rounded-full px-2 py-0.5"
                     :style="{ backgroundColor: 'var(--surface-secondary)', color: 'var(--text-secondary)' }">
                     {{ getStatusLabel(book.status) }}
-                  </span>
+                  </span><span>{{ book.visibility === 'PUBLIC' ? '社区公开' : '私密作品' }}</span>
                 </div>
               </div>
               <button @click="deleteBook(book, $event)"
@@ -167,6 +188,7 @@ function formatWordCount(count?: number | null) {
             <p class="mt-3 line-clamp-3 text-[13.5px] leading-6" :style="{ color: 'var(--text-secondary)' }">
               {{ book.description || '暂无简介，进入编辑器继续完善作品设定。' }}
             </p>
+            <div class="mt-4 flex flex-wrap gap-2" @click.stop><button @click="openPublication(book)" class="btn-secondary !text-xs !px-3">{{ book.visibility === 'PUBLIC' ? '公开设置 / 取消公开' : '发布到社区' }}</button><router-link v-if="book.visibility === 'PUBLIC'" :to="`/community/books/${book.id}`" class="btn-secondary !text-xs !px-3">查看公开页</router-link></div>
             <div class="mt-4 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity"
               :style="{ color: 'var(--brand-hover)' }">
               进入编辑器 →
@@ -192,6 +214,21 @@ function formatWordCount(count?: number | null) {
       </div>
     </div>
 
+    <div v-if="publishingBook" class="modal-overlay" @click.self="!publishing && (publishingBook = null)" @keydown.esc="!publishing && (publishingBook = null)">
+      <form @submit.prevent="publish" class="modal-content !max-w-xl" role="dialog" aria-modal="true" aria-labelledby="publication-title">
+        <h2 id="publication-title" class="font-serif text-xl font-semibold mb-4">公开设置 · {{ publishingBook.title }}</h2>
+        <p class="community-muted text-sm leading-6 mb-4">公开后，读者只能看到作品简介和标记为“已发布”的章节。请在编辑器中逐章发布；大纲、角色和灵感保持私密。</p>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <label><span class="form-label">可见性</span><select v-model="publication.visibility" class="form-input"><option value="PUBLIC">发布到公开社区</option><option value="PRIVATE">私密 / 取消公开</option></select></label>
+          <label><span class="form-label">连载状态</span><select v-model="publication.status" class="form-input"><option value="SERIAL">连载中</option><option value="FINISHED">已完结</option></select></label>
+          <label><span class="form-label">分类</span><input v-model="publication.genre" maxlength="40" class="form-input" placeholder="例如：科幻" /></label>
+          <label><span class="form-label">标签（逗号分隔）</span><input v-model="publication.tags" class="form-input" placeholder="悬疑, 成长" /></label>
+          <label class="sm:col-span-2"><span class="form-label">作品简介</span><textarea v-model="publication.description" class="form-textarea" rows="3" /></label>
+          <label class="sm:col-span-2"><span class="form-label">封面地址（可选）</span><input v-model="publication.cover" class="form-input" type="url" placeholder="https://…" /></label>
+          <label class="flex items-center gap-2 text-sm min-h-11 sm:col-span-2"><input v-model="publication.allow_comments" type="checkbox" class="accent-brand" />允许作品与章节评论</label>
+        </div><p v-if="publishError" role="alert" class="community-feedback mt-3">{{ publishError }}</p><div class="flex justify-end gap-3 mt-5"><button type="button" @click="publishingBook = null" :disabled="publishing" class="btn-secondary">取消</button><button :disabled="publishing" class="btn-primary">{{ publishing ? '保存中…' : publication.visibility === 'PUBLIC' ? '确认公开' : '保存为私密' }}</button></div>
+      </form>
+    </div>
     <!-- New Book Modal -->
     <div v-if="showNewBookModal" class="modal-overlay animate-fade-in" @click.self="showNewBookModal = false">
       <div class="modal-content animate-pop-in">

@@ -17,6 +17,11 @@ export function toBookListPayload(book: Book) {
     status: book.status,
     word_count: book.wordCount,
     owner_id: book.ownerId,
+    visibility: book.visibility,
+    genre: book.genre,
+    tags: book.tags,
+    allow_comments: book.allowComments,
+    published_at: book.publishedAt,
     created_at: book.createdAt,
     updated_at: book.updatedAt,
   };

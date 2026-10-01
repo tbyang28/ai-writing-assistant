@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 
 import { DRIZZLE, type Database } from '../db/drizzle.module';
 import { users, type User } from '../db/schema';
@@ -62,15 +63,34 @@ export class AuthService {
 
   async createUser(email: string, password: string, name: string | null): Promise<User> {
     const hashed = await this.hashPassword(password);
-    const [user] = await this.db
-      .insert(users)
-      .values({ email, password: hashed, name: name ?? '' })
-      .returning();
-    return user;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const username = `author-${Buffer.from(randomUUID().replaceAll('-', ''), 'hex').toString('base64url')}`;
+      try {
+        const [user] = await this.db
+          .insert(users)
+          .values({ email, password: hashed, name: name ?? '', username })
+          .returning();
+        return user;
+      } catch (error) {
+        // Drizzle wraps the PostgreSQL error in cause; only username collisions
+        // warrant a new candidate. Email conflicts and other failures propagate.
+        const pgError = (error as { cause?: { code?: string; constraint?: string } }).cause;
+        if (pgError?.code !== '23505' || pgError.constraint !== 'users_username_unique' || attempt === 4) {
+          throw error;
+        }
+      }
+    }
+    throw new Error('Unable to allocate a unique username');
   }
 }
 
 /** API 返回的用户形状（UserResponse：不含密码哈希） */
 export function toUserResponse(user: User) {
-  return { id: user.id, email: user.email, name: user.name, avatar: user.avatar };
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    avatar: user.avatar,
+    ...(user.username ? { username: user.username, bio: user.bio ?? '' } : {}),
+  };
 }

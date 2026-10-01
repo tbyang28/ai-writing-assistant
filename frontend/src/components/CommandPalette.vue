@@ -9,7 +9,7 @@ interface Command {
   id: string
   title: string
   hint?: string
-  run: () => void | Promise<void>
+  run: () => unknown | Promise<unknown>
 }
 
 const router = useRouter()

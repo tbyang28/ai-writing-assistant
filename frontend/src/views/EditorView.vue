@@ -4,9 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useBookStore, type Chapter, type Outline, type Character } from '@/stores/book'
 import { useAiStore } from '@/stores/ai'
 import AiPanel from '@/components/AiPanel.vue'
-import ChangePreview from '@/components/ChangePreview.vue'
 import CharacterGraph from '@/components/CharacterGraph.vue'
-import { prepareAiChange, type AiChangeProposal, type PreparedAiChange } from '@/utils/aiChange'
+import { communityError } from '@/stores/community'
+import { prepareAiChange, type AiChangeProposal } from '@/utils/aiChange'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +19,19 @@ const editorContent = ref('')
 const editorTitle = ref('')
 const saveTimer = ref<any>(null)
 const saving = ref(false)
+const changingPublication = ref(false), publicationError = ref('')
+const activeChapterStatus = computed(() => chapters.value.find(ch => ch.id === activeChapterId.value)?.status || 'DRAFT')
+async function toggleChapterPublication() {
+  if (!activeChapterId.value || changingPublication.value) return
+  const id = activeChapterId.value
+  changingPublication.value = true; publicationError.value = ''
+  if (saveTimer.value) clearTimeout(saveTimer.value)
+  try {
+    await saveCurrentChapter()
+    if (activeChapterStatus.value === 'PUBLISHED') await bookStore.unpublishChapter(id)
+    else await bookStore.publishChapter(id)
+  } catch(e) { publicationError.value = communityError(e) } finally { changingPublication.value = false }
+}
 const showOutline = ref(false)
 const showCharacters = ref(false)
 const workspaceMode = ref<'editor' | 'graph'>('editor')
@@ -29,7 +42,9 @@ const showAiUndo = ref(false)
 const aiUndoMessage = ref('已插入 AI 内容')
 let undoHideTimer: ReturnType<typeof setTimeout> | null = null
 
-const pendingAiChange = ref<PreparedAiChange | null>(null)
+const aiPanelRef = ref<InstanceType<typeof AiPanel> | null>(null)
+const hasEditorCursor = ref(false)
+let undoState: { chapterId: string; revised: string; start: number; end: number; scrollTop: number } | null = null
 
 // Resizable panels
 const leftPanelWidth = ref(224)       // default: w-56 = 14rem = 224px
@@ -105,7 +120,10 @@ const activeChapterOrder = computed(() => {
 
 async function loadChapter(id: string) {
   activeChapterId.value = id
-  pendingAiChange.value = null
+  showAiUndo.value = false
+  undoState = null
+  hasEditorCursor.value = false
+  aiStore.stopGeneration()
   selectionStart.value = 0
   selectionEnd.value = 0
   aiStore.setSelectedText('')
@@ -262,46 +280,58 @@ async function deleteChapter(chapter: Chapter) {
     activeChapterId.value = null
     editorContent.value = ''
     editorTitle.value = ''
-    pendingAiChange.value = null
+    showAiUndo.value = false
+    undoState = null
   }
 }
 
-function previewAiChange(proposal: AiChangeProposal) {
-  if (pendingAiChange.value) return
-  const prepared = prepareAiChange(activeChapterId.value, editorContent.value, proposal)
-  if (!prepared) {
+async function applyAiChange(proposal: AiChangeProposal) {
+  const change = prepareAiChange(activeChapterId.value, editorContent.value, proposal)
+  if (!change) {
     aiStore.error = '正文或章节已变化，这份 AI 结果已过期，请重新生成。'
     return
   }
   aiStore.error = null
-  pendingAiChange.value = prepared
-}
-
-function acceptAiChange() {
-  const change = pendingAiChange.value
-  if (!change) return
-
+  const scrollTop = contentAreaRef.value?.scrollTop || 0
   undoSnapshot.value = change.original
+  undoState = { chapterId: change.chapterId, revised: change.revised,
+    start: selectionStart.value, end: selectionEnd.value, scrollTop }
   editorContent.value = change.revised
-  const insertedLength = change.revised.length - change.original.length + (change.end - change.start)
-  selectionStart.value = change.start
-  selectionEnd.value = change.start + Math.max(0, insertedLength)
-  pendingAiChange.value = null
-  aiUndoMessage.value = change.label.includes('插入') ? '已插入 AI 内容' : '已应用 AI 修改'
+  await restoreEditorPosition(change.start, change.start + change.replacement.length, scrollTop)
+  aiUndoMessage.value = change.start === change.end ? '已插入 AI 内容' : '已应用 AI 修改'
   showAiUndo.value = true
   if (undoHideTimer) clearTimeout(undoHideTimer)
-  undoHideTimer = setTimeout(() => { showAiUndo.value = false }, 5000)
-  nextTick(autoResizeTextarea)
 }
 
-function rejectAiChange() {
-  pendingAiChange.value = null
+async function restoreEditorPosition(start: number, end: number, scrollTop: number) {
+  await nextTick()
+  autoResizeTextarea()
+  const el = textareaRef.value
+  if (el) {
+    el.focus({ preventScroll: true })
+    el.setSelectionRange(start, end)
+    updateEditorSelection()
+  }
+  if (contentAreaRef.value) contentAreaRef.value.scrollTop = scrollTop
 }
 
-function undoAiInsert() {
+async function undoAiInsert() {
+  const state = undoState
+  if (!state || state.chapterId !== activeChapterId.value || editorContent.value !== state.revised) {
+    showAiUndo.value = false
+    return
+  }
   editorContent.value = undoSnapshot.value
   showAiUndo.value = false
-  if (undoHideTimer) clearTimeout(undoHideTimer)
+  undoState = null
+  await restoreEditorPosition(state.start, state.end, state.scrollTop)
+}
+
+async function quickAiAction(action: 'polish' | 'fix' | 'continue' | 'custom') {
+  if (aiStore.isLoading) return
+  aiStore.openPanel()
+  await nextTick()
+  await aiPanelRef.value?.runAction(action, { atSelection: true })
 }
 
 // === Auto-resize textarea ===
@@ -310,25 +340,33 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 function autoResizeTextarea() {
   const el = textareaRef.value
   if (!el) return
+  const scrollTop = contentAreaRef.value?.scrollTop || 0
   el.style.height = 'auto'
   el.style.height = el.scrollHeight + 'px'
+  if (contentAreaRef.value) contentAreaRef.value.scrollTop = scrollTop
 }
 
 function updateEditorSelection() {
   const el = textareaRef.value
   if (!el) return
+  hasEditorCursor.value = true
   selectionStart.value = el.selectionStart
   selectionEnd.value = el.selectionEnd
   aiStore.setSelectedText(editorContent.value.slice(selectionStart.value, selectionEnd.value))
 }
 
 watch(editorContent, () => {
+  if (undoState && editorContent.value !== undoState.revised) showAiUndo.value = false
   nextTick(autoResizeTextarea)
 })
 
 function switchWorkspaceMode(mode: 'editor' | 'graph') {
   workspaceMode.value = mode
   if (mode === 'graph') {
+    hasEditorCursor.value = false
+    selectionStart.value = 0
+    selectionEnd.value = 0
+    aiStore.setSelectedText('')
     showCharacters.value = true
     showOutline.value = false
   }
@@ -394,6 +432,7 @@ function stopDrag() {
           <span class="text-[11px]" :style="{ color: 'var(--text-muted)' }">{{ saving ? '保存中...' : '已保存' }}</span>
         </div>
         <h2 class="font-serif text-[15px] font-semibold mt-1.5 truncate" :style="{ color: 'var(--text-primary)' }">{{ bookStore.currentBook?.title }}</h2>
+        <div v-if="activeChapterId" class="mt-3"><button @click="toggleChapterPublication" :disabled="changingPublication || saving" class="btn-secondary !text-xs w-full">{{ changingPublication ? '更新中…' : activeChapterStatus === 'PUBLISHED' ? '转为草稿 / 撤下章节' : '发布本章' }}</button><p class="text-[11px] leading-5 mt-2 community-muted">{{ activeChapterStatus === 'PUBLISHED' ? '已发布。作品公开时，后续正文修改会同步给读者。' : '草稿仅自己可见。作品公开后，已发布章节可被阅读。' }}</p><p v-if="publicationError" class="community-feedback text-xs mt-2" role="alert">{{ publicationError }}</p></div>
       </div>
 
       <!-- Tabs -->
@@ -445,7 +484,7 @@ function stopDrag() {
               </div>
               <div class="text-[11px] mt-0.5"
                 :style="{ color: activeChapterId === ch.id ? 'var(--brand-hover)' : 'var(--text-muted)' }">
-                {{ ch.word_count }}字
+                {{ ch.word_count }}字 · {{ ch.status === 'PUBLISHED' ? '已发布' : '草稿' }}
               </div>
             </div>
             <button
@@ -601,18 +640,19 @@ function stopDrag() {
           :book-title="bookStore.currentBook?.title"
         />
         <div v-else-if="activeChapterId" class="max-w-3xl mx-auto px-8 py-8">
-          <ChangePreview
-            v-if="pendingAiChange"
-            :original="pendingAiChange.original"
-            :revised="pendingAiChange.revised"
-            :label="pendingAiChange.label"
-            @accept="acceptAiChange"
-            @reject="rejectAiChange"
-          />
+          <div v-if="selectionEnd > selectionStart" class="selection-tools" role="toolbar" aria-label="选中文字的 AI 操作" @mousedown.prevent>
+            <span>选中 {{ selectionEnd - selectionStart }} 字</span>
+            <button :disabled="aiStore.isLoading" @click="quickAiAction('polish')">润色</button>
+            <button :disabled="aiStore.isLoading" @click="quickAiAction('fix')">校对</button>
+            <button :disabled="aiStore.isLoading" @click="quickAiAction('continue')">接着写</button>
+            <button :disabled="aiStore.isLoading" @click="quickAiAction('custom')">自定义</button>
+          </div>
           <textarea
-            v-else
             ref="textareaRef"
             v-model="editorContent"
+            aria-label="章节正文"
+            @focus="updateEditorSelection"
+            @input="updateEditorSelection"
             @select="updateEditorSelection"
             @keyup="updateEditorSelection"
             @mouseup="updateEditorSelection"
@@ -654,6 +694,8 @@ function stopDrag() {
 
     <!-- AI Panel -->
     <AiPanel
+      ref="aiPanelRef"
+      :has-cursor="hasEditorCursor"
       v-if="aiStore.isPanelOpen"
       :book-id="bookId"
       :chapter-content="editorContent"
@@ -662,7 +704,7 @@ function stopDrag() {
       :selection-start="selectionStart"
       :selection-end="selectionEnd"
       :style="{ width: rightPanelWidth + 'px' }"
-      @apply-change="previewAiChange"
+      @apply-change="applyAiChange"
     />
 
     <!-- Modals -->
@@ -811,3 +853,13 @@ function stopDrag() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.selection-tools { position:sticky; top:8px; z-index:10; display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin-bottom:12px; width:fit-content; padding:5px 8px; border:1px solid var(--border-clr); border-radius:12px; background:var(--surface); box-shadow:var(--shadow-soft); }
+.selection-tools span { padding:6px; font-size:11px; color:var(--text-muted); }
+.selection-tools button { min-height:36px; padding:6px 10px; border-radius:8px; font-size:12px; color:var(--brand-hover); }
+.selection-tools button:hover:not(:disabled) { background:var(--brand-softer); }
+.selection-tools button:disabled { opacity:.45; cursor:not-allowed; }
+.selection-tools button:focus-visible { outline:2px solid var(--brand); }
+@media (max-width:768px) { .selection-tools button { min-height:44px; } }
+</style>

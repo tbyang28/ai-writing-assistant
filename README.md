@@ -1,8 +1,8 @@
 # AI Copilot 写作平台
 
-面向长篇小说创作的 AI 全栈写作辅助系统。项目基于 **NestJS + Vue3 + TypeScript** 构建，集成多模型写作、SSE 流式生成、RAG 检索增强、AI Diff 润色、人物识别和角色关系图谱，目标是把传统“AI 聊天框”升级成一个可落地的小说创作工作台。
+面向长篇小说创作的 AI 全栈写作辅助系统。项目基于 **NestJS + Vue3 + TypeScript** 构建，集成多模型写作、SSE 流式生成、RAG 检索增强、AI Diff 润色、人物识别、角色关系图谱和公开作品社区，目标是把传统“AI 聊天框”升级成一个可落地的小说创作工作台。
 
-> 当前主后端是 `backend-ts/`（NestJS + Drizzle + PostgreSQL）。`backend/` 是迁移前的 FastAPI + SQLite 参考实现，不参与主链路部署。
+> 当前主后端是 `backend-ts/`（NestJS + Drizzle + PostgreSQL）。旧 Python 源码已移除；本机 `backend/` 若仍存在，可能包含旧 SQLite 数据和虚拟环境，不参与主链路部署。
 
 项目已支持一键初始化示例作品，便于本地体验和面试演示。
 
@@ -44,6 +44,29 @@
 | RAG 检索增强 | 保存章节时建立向量索引，续写时召回相关上下文 |
 | 多模型切换 | 支持 DeepSeek、GLM、MiniMax 等模型 |
 | 示例作品初始化 | 一键生成章节、人物、关系、大纲和灵感数据 |
+| 公开作品社区 | 发现与搜索作品、独立阅读器、作者主页、关注、点赞、收藏与阅读进度 |
+| 读者交流 | 作品/章节评论、回复、作者删评与置顶、互动通知、举报与拉黑 |
+
+---
+
+## 公开作品社区
+
+作品默认私密。作者在“我的作品”中填写分类、标签和评论设置后，选择“发布到社区”；章节仍需在编辑器中单独发布。只有公开作品中的 `PUBLISHED` 章节可被读者阅读，取消作品公开或把章节转回草稿后，社区接口不再返回它们。
+
+| 页面 | 路径 | 用途 |
+|------|------|------|
+| 发现 | `/discover` | 最新/热门、分类、标签和搜索 |
+| 作品详情 | `/community/books/:id` | 简介、公开目录、点赞、收藏、评论 |
+| 阅读器 | `/community/books/:id/read/:chapterId` | 正文、章节切换、阅读进度、章节讨论 |
+| 作者主页 | `/community/users/:id` | 公开资料、作品、关注和拉黑 |
+| 我的书架 | `/bookshelf` | 已收藏作品和继续阅读 |
+| 通知 | `/notifications` | 新关注、点赞、评论与回复，标为已读 |
+
+未登录用户可以发现、阅读和查看作者主页；登录后可以互动、编辑自己的公开资料、管理书架与通知。评论为纯文本，支持回复；评论作者与作品作者可以删除评论，只有作品作者可以置顶。举报保存为待处理记录，本阶段不包含管理员审核界面、私信或多人协作写作。
+
+公开响应使用专门的字段白名单，邮箱、密码、大纲、角色、灵感、RAG 片段和草稿章节不进入社区响应。关注、点赞、收藏和拉黑依靠数据库唯一约束保证重复操作不产生重复记录。
+
+后端社区入口为 `/api/community`；作品发布使用 `POST /api/books/:id/publish`。迁移 `backend-ts/drizzle/0001_simple_steel_serpent.sql` 为旧数据生成公开用户名，已有作品保持私密。`0002_comment_parent_reference.sql` 补齐评论父级外键并修复旧孤立引用。Render 启动时会自动执行这些增量迁移；不需要清空或重建生产数据库。
 
 ---
 
@@ -245,6 +268,8 @@ VITE_API_URL=https://你的后端服务地址.onrender.com/api
 
 Render API 服务默认从环境变量读取 `DATABASE_URL`，并在启动时执行 Drizzle migration（`RUN_MIGRATIONS=true`）。不要把生产数据放在容器本地文件中；需要长期保存时使用带 `pgvector` 扩展的 PostgreSQL（例如 Neon 或可用的 Render/外部 Postgres）。
 
+社区功能在 `feat/public-community` 分支交付。部署该分支时，API 和 Static Site 必须使用同一分支/提交；先确认 API 完成迁移并通过 `/api/health`，再核对前端 `/discover` 与公开 API `/api/community/feed`。切回旧版本前端不回滚数据库；迁移为增量新增列和表，旧作品仍然私密。
+
 Render 负责构建、托管和提供公网访问地址，适合把项目快速部署成可在线体验的作品集 Demo。
 
 ---
@@ -311,7 +336,16 @@ npm test
 npm run build
 ```
 
-当前覆盖 17 个测试文件、174 个用例：认证、JWT、AI Prompt、Diff 解析、人物识别 JSON 解析、RAG 文本分块与相似度、作品/章节/角色 API，以及真实 socket 的 SSE 取消回归。
+后端覆盖 21 个测试文件、206 个用例：认证、JWT、AI Prompt、Diff 解析、人物识别 JSON 解析、RAG 文本分块与相似度、作品/章节/角色 API、社区权限与并发互动、数据库迁移，以及真实 socket 的 SSE 取消回归。
+
+前端覆盖 4 个测试文件、18 个用例，包含社区状态、AI 对话隔离与修改预览，并提供类型检查：
+
+```bash
+cd frontend
+npm test
+npm run typecheck
+npm run build
+```
 
 ---
 

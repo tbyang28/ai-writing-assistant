@@ -96,6 +96,8 @@ async function main(): Promise<void> {
     .values(
       users.map((u) => ({
         id: String(u.id),
+        username: String(u.id).replace(/-/g, ''),
+        bio: toStr(u.bio),
         email: toStr(u.email, `unknown-${u.id}@invalid`),
         password: toStr(u.password),
         name: toStr(u.name),

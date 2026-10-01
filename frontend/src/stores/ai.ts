@@ -39,7 +39,7 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   function openPanel() { isPanelOpen.value = true }
-  function closePanel() { isPanelOpen.value = false }
+  function closePanel() { stopGeneration(); isPanelOpen.value = false }
   function togglePanel() { isPanelOpen.value = !isPanelOpen.value }
 
   function addMessage(role: string, content: string) {
@@ -48,6 +48,7 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   function clearChat() {
+    stopGeneration()
     chatMessages.value = []
     if (activeHistoryKey.value) {
       localStorage.removeItem(activeHistoryKey.value)
@@ -153,164 +154,119 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  async function streamChat(bookId: string, message: string, onToken: (text: string) => void, currentContent?: string, chapterId?: string) {
+  type StreamEvent = { type: string; data?: any }
+  let activeStream: { controller: AbortController; reader?: ReadableStreamDefaultReader<Uint8Array> } | null = null
+
+  function stopGeneration() {
+    if (!activeStream) return
+    const stream = activeStream
+    activeStream = null
+    stream.controller.abort()
+    void stream.reader?.cancel().catch(() => {})
+    isLoading.value = false
+  }
+
+  async function consumeStream(path: string, body: object, onEvent: (event: StreamEvent) => void, onComplete?: () => void) {
+    stopGeneration()
+    const stream = { controller: new AbortController(), reader: undefined as ReadableStreamDefaultReader<Uint8Array> | undefined }
+    activeStream = stream
     isLoading.value = true
     error.value = null
-    const responseHistoryKey = activeHistoryKey.value
-    addMessage('user', message)
-    addMessage('assistant', '')
-
+    const signal = stream.controller.signal
+    const isCurrent = () => activeStream === stream && !signal.aborted
+    let abortListener!: () => void
+    const aborted = new Promise<never>((_, reject) => {
+      abortListener = () => reject(new DOMException('Stopped', 'AbortError'))
+      signal.addEventListener('abort', abortListener, { once: true })
+    })
     try {
-      const token = localStorage.getItem('token')
-      const response = await fetch(streamUrl('/ai/chat/stream'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          book_id: bookId,
-          message,
-          chapter_id: chapterId,
-          current_content: currentContent,
-          history: chatMessages.value.slice(-10, -1).map(m => ({ role: m.role, content: m.content })),
-          model: selectedModel.value || undefined,
-        }),
-      })
-
-      if (!response.ok) {
-        const message = await parseErrorResponse(response)
-        if (activeHistoryKey.value === responseHistoryKey) replaceLastAssistantContent(message)
-        throw new Error(message)
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader available')
-
+      const response = await Promise.race([fetch(streamUrl(path), {
+        method: 'POST', signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify(body),
+      }).then(response => {
+        if (!isCurrent()) {
+          void response.body?.cancel().catch(() => {})
+          throw new DOMException('Stopped', 'AbortError')
+        }
+        return response
+      }), aborted])
+      if (!response.ok) throw new Error(await parseErrorResponse(response))
+      stream.reader = response.body?.getReader()
+      if (!stream.reader) throw new Error('无法读取 AI 响应')
       const decoder = new TextDecoder()
-      let fullText = ''
       let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
+      function parseLine(line: string) {
+        const trimmed = line.trim()
+        if (!isCurrent() || !trimmed.startsWith('data:')) return
+        const payload = trimmed.slice(5).trim()
+        if (payload === '[DONE]') return
+        let event: StreamEvent
+        try { event = JSON.parse(payload) } catch { return }
+        if (event.type === 'error') throw new Error(event.data?.message || 'AI 响应失败')
+        onEvent(event)
+      }
+      while (isCurrent()) {
+        const { done, value } = await Promise.race([stream.reader.read(), aborted])
+        if (!isCurrent()) return false
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith('data: ')) continue
-          const dataStr = trimmed.slice(6)
-          if (dataStr === '[DONE]') continue
-
-          let parsed: any
-          try {
-            parsed = JSON.parse(dataStr)
-          } catch {
-            continue
-          }
-          if (parsed.type === 'token') {
-            const text = parsed.data?.text || ''
-            fullText += text
-            if (activeHistoryKey.value === responseHistoryKey) onToken(text)
-          } else if (parsed.type === 'error') {
-            const message = parsed.data?.message || 'AI 流式响应失败'
-            if (activeHistoryKey.value === responseHistoryKey) replaceLastAssistantContent(message)
-            throw new Error(message)
-          }
-        }
+        lines.forEach(parseLine)
+        if (done) { if (buffer) parseLine(buffer); break }
       }
+      if (!isCurrent()) return false
+      onComplete?.()
+      return true
+    } catch (err: any) {
+      if (isCurrent()) error.value = err.message || 'AI 响应失败'
+      return false
+    } finally {
+      signal.removeEventListener('abort', abortListener)
+      void stream.reader?.cancel().catch(() => {})
+      if (activeStream === stream) {
+        activeStream = null
+        isLoading.value = false
+      }
+    }
+  }
 
+  async function streamChat(bookId: string, message: string, onToken: (text: string) => void, currentContent?: string, chapterId?: string) {
+    const responseHistoryKey = activeHistoryKey.value
+    const history = chatMessages.value.slice(-10).map(m => ({ role: m.role, content: m.content }))
+    addMessage('user', message)
+    addMessage('assistant', '')
+    let fullText = ''
+    const completed = await consumeStream('/ai/chat/stream', {
+      book_id: bookId, message, chapter_id: chapterId, current_content: currentContent,
+      history, model: selectedModel.value || undefined,
+    }, event => {
+      if (event.type === 'token') {
+        const text = event.data?.text || ''
+        fullText += text
+        if (activeHistoryKey.value === responseHistoryKey) onToken(text)
+      }
+    }, () => {
       if (activeHistoryKey.value === responseHistoryKey) {
         lastResponse.value = { answer: fullText }
         persistChatHistory()
       }
-      return { answer: fullText }
-    } catch (err: any) {
-      error.value = err.message || '流式响应失败'
-      if (activeHistoryKey.value === responseHistoryKey && !chatMessages.value[chatMessages.value.length - 1]?.content) {
-        replaceLastAssistantContent(error.value || '流式响应失败')
-      }
-      return null
-    } finally {
-      isLoading.value = false
-    }
+    })
+    return completed ? { answer: fullText } : null
   }
 
-  async function streamWrite(bookId: string, content: string, command: string, onToken: (text: string) => void, selectedText?: string, chapterId?: string) {
-    isLoading.value = true
-    error.value = null
-
-    try {
-      const token = localStorage.getItem('token')
-      const response = await fetch(streamUrl('/ai/write/stream'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          book_id: bookId,
-          content,
-          command,
-          chapter_id: chapterId,
-          selected_text: selectedText,
-          model: selectedModel.value || undefined,
-        }),
-      })
-
-      if (!response.ok) throw new Error(await parseErrorResponse(response))
-
-      // 用 Streams API 读取 SSE 流，一段一段解析
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader available')
-
-      const decoder = new TextDecoder()
-      let fullText = ''
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        // 把二进制数据解码成字符串
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''  // 最后一行可能不完整，留到下轮处理
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith('data: ')) continue
-          const dataStr = trimmed.slice(6)
-          if (dataStr === '[DONE]') continue
-
-          let parsed: any
-          try {
-            parsed = JSON.parse(dataStr)
-          } catch {
-            continue
-          }
-          if (parsed.type === 'token') {
-            const text = parsed.data?.text || ''
-            fullText += text
-            onToken(text)  // 回调：每收到一个字就通知前端更新
-          } else if (parsed.type === 'error') {
-            throw new Error(parsed.data?.message || 'AI 流式响应失败')
-          }
-        }
+  async function streamWrite(bookId: string, content: string, command: string, onToken: (text: string) => void, selectedText?: string, chapterId?: string, model = selectedModel.value) {
+    let fullText = ''
+    const completed = await consumeStream('/ai/write/stream', {
+      book_id: bookId, content, command, chapter_id: chapterId, selected_text: selectedText, model: model || undefined,
+    }, event => {
+      if (event.type === 'token') {
+        const text = event.data?.text || ''
+        fullText += text
+        onToken(text)
       }
-
-      lastResponse.value = { answer: fullText }
-      persistChatHistory()
-      return { answer: fullText }
-    } catch (err: any) {
-      error.value = err.message || '流式响应失败'
-      return null
-    } finally {
-      isLoading.value = false
-    }
+    }, () => { lastResponse.value = { answer: fullText } })
+    return completed ? { answer: fullText } : null
   }
 
   async function write(bookId: string, content: string, command: string, selectedText?: string, chapterId?: string) {
@@ -358,91 +314,28 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   async function polishDiffStream(
-    bookId: string,
-    content: string,
-    selectedText?: string,
-    chapterId?: string,
-    instruction?: string,
+    bookId: string, content: string, selectedText?: string, chapterId?: string, instruction?: string,
     onToken?: (text: string, fullText: string) => void,
     onMeta?: (meta: Partial<PolishDiffResult>) => void,
+    model = selectedModel.value,
   ) {
-    isLoading.value = true
-    error.value = null
-    try {
-      const token = localStorage.getItem('token')
-      const response = await fetch(streamUrl('/ai/polish-diff/stream'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          book_id: bookId,
-          content,
-          chapter_id: chapterId,
-          selected_text: selectedText,
-          instruction: instruction?.trim() || undefined,
-          model: selectedModel.value || undefined,
-        }),
-      })
-
-      if (!response.ok) throw new Error(await parseErrorResponse(response))
-
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader available')
-
-      const decoder = new TextDecoder()
-      let fullText = ''
-      let buffer = ''
-      let finalResult: PolishDiffResult | null = null
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith('data: ')) continue
-          const dataStr = trimmed.slice(6)
-          if (dataStr === '[DONE]') continue
-
-          let parsed: any
-          try {
-            parsed = JSON.parse(dataStr)
-          } catch {
-            continue
-          }
-
-          if (parsed.type === 'meta') {
-            onMeta?.(parsed.data || {})
-          } else if (parsed.type === 'token') {
-            const text = parsed.data?.text || ''
-            fullText += text
-            onToken?.(text, fullText)
-          } else if (parsed.type === 'result') {
-            finalResult = parsed.data as PolishDiffResult
-          } else if (parsed.type === 'error') {
-            throw new Error(parsed.data?.message || 'AI Diff 流式润色失败')
-          }
-        }
+    let fullText = ''
+    let result: PolishDiffResult | null = null
+    const completed = await consumeStream('/ai/polish-diff/stream', {
+      book_id: bookId, content, chapter_id: chapterId, selected_text: selectedText,
+      instruction: instruction?.trim() || undefined, model: model || undefined,
+    }, event => {
+      if (event.type === 'meta') onMeta?.(event.data || {})
+      if (event.type === 'token') {
+        fullText += event.data?.text || ''
+        onToken?.(event.data?.text || '', fullText)
       }
-
-      if (!finalResult) {
-        throw new Error('AI Diff 流式响应未返回审阅结果')
-      }
-
-      lastResponse.value = finalResult
-      return finalResult
-    } catch (err: any) {
-      error.value = err.message || 'AI Diff 流式润色失败'
-      return null
-    } finally {
-      isLoading.value = false
-    }
+      if (event.type === 'result') result = event.data as PolishDiffResult
+    }, () => {
+      if (!result) throw new Error('AI 未返回完整审阅结果，请重新生成')
+      lastResponse.value = result
+    })
+    return completed ? result as PolishDiffResult | null : null
   }
 
   async function extractCharacters(bookId: string, content: string, chapterId?: string) {
@@ -470,6 +363,6 @@ export const useAiStore = defineStore('ai', () => {
     isLoading, error, lastResponse, isPanelOpen, selectedText, pendingInsert, chatMessages, selectedModel,
     setSelectedText, openPanel, closePanel, togglePanel, addMessage, clearChat,
     loadChatHistory, persistChatHistory, replaceLastAssistantContent, appendToLastAssistant,
-    sendMessage, streamChat, write, streamWrite, polishDiff, polishDiffStream, extractCharacters,
+    sendMessage, streamChat, write, streamWrite, polishDiff, polishDiffStream, extractCharacters, stopGeneration,
   }
 })
