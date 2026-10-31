@@ -23,7 +23,8 @@ import { codePointLength, codePointSlice } from '../shared/text';
 import { isUuid } from '../shared/is-uuid';
 import { parseCharacterExtraction } from './extraction';
 import { extractAiError } from './extract-error';
-import { LLM_CLIENT, type LlmClient, type LlmCallOptions } from './llm/llm-client.interface';
+import type { LlmCallOptions } from './llm/llm-client.interface';
+import { AgentRuntimeService } from './agent/agent-runtime.service';
 import {
   buildContinuePrompt,
   buildContextualChatPrompt,
@@ -58,7 +59,7 @@ import {
 export class AiController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
-    @Inject(LLM_CLIENT) private readonly llm: LlmClient,
+    private readonly runtime: AgentRuntimeService,
     private readonly memory: StoryMemoryService,
     private readonly agent: AgentService,
   ) {}
@@ -81,11 +82,11 @@ export class AiController {
         data.current_content ?? null,
       );
       const userMsg = buildContextualChatPrompt(data.message, storyMemory);
-      const result = await this.llm.chat({
+      const result = await this.generate(book, {
         messages: buildMessages('chat', userMsg, data.history ?? undefined),
         model: data.model ?? undefined,
       });
-      return { data: result };
+      return { data: { answer: result.answer } };
     } catch (e) {
       throw internalAiError(e);
     }
@@ -100,11 +101,11 @@ export class AiController {
     const book = await this.verifyBookAccess(data.book_id, user.id);
     try {
       const userMsg = await this.buildWritePrompt(data, book);
-      const result = await this.llm.chat({
+      const result = await this.generate(book, {
         messages: buildMessages(data.command, userMsg),
         model: data.model ?? undefined,
       });
-      return { data: result };
+      return { data: { answer: result.answer } };
     } catch (e) {
       throw internalAiError(e);
     }
@@ -122,12 +123,12 @@ export class AiController {
     }
     try {
       const call = await this.preparePolishDiffCall(data, book);
-      const result = await this.llm.chat({
+      const result = await this.generate(book, {
         messages: call.messages,
         model: data.model ?? undefined,
         maxTokens: call.maxTokens,
         temperature: 0.35,
-      });
+      }, { includeRag: false });
       return { data: this.buildPolishDiffResponse(call, result.answer ?? '') };
     } catch (e) {
       throw internalAiError(e);
@@ -140,7 +141,7 @@ export class AiController {
     @Body(new ZodValidationPipe(aiExtractCharactersSchema)) data: AiExtractCharactersInput,
     @CurrentUser() user: User,
   ) {
-    await this.verifyBookAccess(data.book_id, user.id);
+    const book = await this.verifyBookAccess(data.book_id, user.id);
 
     const content = (data.content || '').trim();
     if (codePointLength(content) < 20) {
@@ -148,10 +149,10 @@ export class AiController {
     }
     try {
       const userMsg = `请从以下小说正文中识别人物：\n\n${codePointSlice(content, 0, 6000)}`;
-      const result = await this.llm.chat({
+      const result = await this.generate(book, {
         messages: buildMessages('extract_characters', userMsg),
         model: data.model ?? undefined,
-      });
+      }, { useTools: false });
       try {
         return { data: { characters: parseCharacterExtraction(result.answer || '{}') } };
       } catch (e) {
@@ -174,7 +175,7 @@ export class AiController {
     @Body(new ZodValidationPipe(aiOutlineSchema)) data: AiOutlineInput,
     @CurrentUser() user: User,
   ) {
-    await this.verifyBookAccess(data.book_id, user.id);
+    const book = await this.verifyBookAccess(data.book_id, user.id);
     try {
       let userMsg = `小说标题：${data.title}\n`;
       if (data.genre) {
@@ -186,11 +187,11 @@ export class AiController {
       }
       userMsg += '\n请为我生成详细的小说大纲。';
 
-      const result = await this.llm.chat({
+      const result = await this.generate(book, {
         messages: buildMessages('outline', userMsg),
         model: data.model ?? undefined,
       });
-      return { data: result };
+      return { data: { answer: result.answer } };
     } catch (e) {
       // Python 版此端点的兜底文案没有 _extract_ai_error，直接拼 str(e)
       throw new HttpException(`AI 服务调用失败: ${errMsg(e)}`, 500);
@@ -234,7 +235,10 @@ export class AiController {
         history: data.history ?? undefined,
         model: data.model ?? undefined,
         signal: abort.signal,
-        emit: (event) => this.writeAgentEvent(res, event),
+        stream: true,
+        emit: (event) => event.type === 'token'
+          ? this.writeToken(res, event.text)
+          : this.writeAgentEvent(res, event),
       });
       this.finishSse(res);
     } catch (e) {
@@ -292,7 +296,7 @@ export class AiController {
         data.current_content ?? null,
       );
       const userMsg = buildContextualChatPrompt(data.message, storyMemory);
-      await this.pipeTokens(res, {
+      await this.pipeTokens(res, book, {
         messages: buildMessages('chat', userMsg, data.history ?? undefined),
         model: data.model ?? undefined,
         signal: abort.signal,
@@ -314,7 +318,7 @@ export class AiController {
     const abort = this.startSse(res);
     try {
       const userMsg = await this.buildWritePrompt(data, book);
-      await this.pipeTokens(res, {
+      await this.pipeTokens(res, book, {
         messages: buildMessages(data.command, userMsg),
         model: data.model ?? undefined,
         signal: abort.signal,
@@ -353,6 +357,7 @@ export class AiController {
       const revisedChunks: string[] = [];
       await this.pipeTokens(
         res,
+        book,
         {
           messages: call.messages,
           model: data.model ?? undefined,
@@ -361,6 +366,7 @@ export class AiController {
           signal: abort.signal,
         },
         (chunk) => revisedChunks.push(chunk),
+        false,
       );
 
       this.writeSse(res, {
@@ -511,19 +517,35 @@ export class AiController {
     await Promise.race([once(res, 'drain'), once(res, 'close')]);
   }
 
-  /** 三个流式端点共用的 token 循环（onToken 供 polish-diff 收集改文） */
+  /** 所有生成任务统一经由自研 Agent；模型适配器只由执行器调用。 */
+  private generate(
+    book: Book,
+    options: LlmCallOptions,
+    policy: { useTools?: boolean; includeRag?: boolean } = {},
+  ) {
+    return this.runtime.run({ ...options, ...policy, book });
+  }
+
+  /** 普通写作保留 token 协议，工具过程由执行器内部处理；onToken 用于组装 diff。 */
   private async pipeTokens(
     res: Response,
+    book: Book,
     options: LlmCallOptions,
     onToken?: (text: string) => void,
+    includeRag = true,
   ): Promise<void> {
-    for await (const chunk of this.llm.chatStream(options)) {
-      if (options.signal?.aborted) {
-        return; // 客户端已断开：停止消费，for-await 提前退出会触发上游 dump
-      }
-      onToken?.(chunk);
-      await this.writeToken(res, chunk);
-    }
+    await this.runtime.run({
+      ...options,
+      book,
+      includeRag,
+      stream: true,
+      emit: async (event) => {
+        if (event.type === 'token') {
+          onToken?.(event.text);
+          await this.writeToken(res, event.text);
+        }
+      },
+    });
   }
 
   private finishSse(res: Response): void {

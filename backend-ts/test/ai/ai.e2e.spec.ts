@@ -265,6 +265,75 @@ describe('POST /api/ai/write', () => {
   });
 });
 
+describe('普通写作统一使用 Agent 执行器', () => {
+  it('write 入口可多轮读取人物设定后完成正文，保持原响应格式', async () => {
+    let turn = 0;
+    const agentApp = await buildTestApp({ chat: async () => ++turn === 1
+      ? { answer: '查询人物', toolCalls: [{ id: 'read-character', name: 'get_characters', argumentsJson: '{}' }] }
+      : { answer: '张三拔出长剑。' },
+    });
+    try {
+      const { auth } = await registerUser(agentApp, 'write-agent@test.dev');
+      const created = await request(agentApp.getHttpServer()).post('/api/books').set(auth).send({ title: '青云志' });
+      await request(agentApp.getHttpServer()).post(`/api/books/${created.body.id}/characters`)
+        .set(auth).send({ name: '张三', role: '主角', bio: '剑客' });
+      const res = await request(agentApp.getHttpServer()).post('/api/ai/write').set(auth)
+        .send({ book_id: created.body.id, command: 'continue', content: '张三起身。' });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ data: { answer: '张三拔出长剑。' } });
+      const result = llmCalls.at(-1)!.messages.find((message) => message.toolCallId === 'read-character');
+      expect(result?.content).toContain('张三');
+      expect(llmCalls.at(-1)!.messages[0].content).toBe(SYSTEM_PROMPTS.continue);
+    } finally {
+      await agentApp.close();
+    }
+  });
+
+  it('普通聊天拒绝写工具，未授权调用不会创建人物', async () => {
+    let turn = 0;
+    const agentApp = await buildTestApp({ chat: async () => ++turn === 1
+      ? { answer: '', toolCalls: [{ id: 'write-character', name: 'save_character', argumentsJson: '{"name":"不应保存的人物"}' }] }
+      : { answer: '只提供建议。' },
+    });
+    try {
+      const { auth } = await registerUser(agentApp, 'chat-agent-readonly@test.dev');
+      const created = await request(agentApp.getHttpServer()).post('/api/books').set(auth).send({ title: '青云志' });
+      const res = await request(agentApp.getHttpServer()).post('/api/ai/chat').set(auth)
+        .send({ book_id: created.body.id, message: '建议一个人物' });
+      expect(res.status).toBe(200);
+      expect(llmCalls.at(-1)!.messages.at(-1)!.content).toContain('未授权');
+      const detail = await request(agentApp.getHttpServer()).get(`/api/books/${created.body.id}`).set(auth);
+      expect(detail.body.characters).toEqual([]);
+    } finally {
+      await agentApp.close();
+    }
+  });
+
+  it('polish-diff/stream 读取工具后只流出最终正文，再生成差异结果', async () => {
+    let turn = 0;
+    const agentApp = await buildTestApp({
+      chat: async () => ++turn === 1
+        ? { answer: '查设定', toolCalls: [{ id: 'read-outline', name: 'get_outline', argumentsJson: '{}' }] }
+        : { answer: '' },
+      chatStream: async function* () { yield '张三缓缓'; yield '拔出长剑。'; },
+    });
+    try {
+      const { auth } = await registerUser(agentApp, 'polish-agent-stream@test.dev');
+      const created = await request(agentApp.getHttpServer()).post('/api/books').set(auth).send({ title: '青云志' });
+      const res = await request(agentApp.getHttpServer()).post('/api/ai/polish-diff/stream').set(auth)
+        .send({ book_id: created.body.id, content: '张三很快的拔出了剑。' });
+      const frames = jsonFrames(res.text);
+      expect(frames.map((frame) => frame.type)).toEqual(['meta', 'token', 'token', 'result', 'done']);
+      expect(frames.find((frame) => frame.type === 'result')!.data.revised).toBe('张三缓缓拔出长剑。');
+      expect(res.text).not.toContain('查设定');
+      expect(llmCalls[0].tools?.map((spec) => spec.name)).not.toContain('search_story');
+      expect(llmCalls.at(-1)!.messages.some((message) => message.toolCallId === 'read-outline')).toBe(true);
+    } finally {
+      await agentApp.close();
+    }
+  });
+});
+
 describe('POST /api/ai/polish-diff（非流式）', () => {
   it('空文本 → 400 需要提供待润色文本', async () => {
     const { auth } = await registerUser(app, 'ai-polish-1@test.dev');
