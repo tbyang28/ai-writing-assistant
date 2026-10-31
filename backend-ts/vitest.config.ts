@@ -14,8 +14,8 @@ export default defineConfig({
     // 并行会互相清掉对方的数据
     fileParallelism: false,
     env: {
-      DATABASE_URL: 'postgres://postgres:postgres@localhost:5434/ai_writing_test',
-      TEST_DATABASE_URL: 'postgres://postgres:postgres@localhost:5434/ai_writing_test',
+      DATABASE_URL: process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5434/ai_writing_test',
+      TEST_DATABASE_URL: process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5434/ai_writing_test',
       RUN_MIGRATIONS: 'false',
       SECRET_KEY: 'test-secret-key',
     },
