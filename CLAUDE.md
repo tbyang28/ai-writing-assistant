@@ -35,9 +35,10 @@
 - polish-diff 用更紧的上下文预算变体（不含 RAG）
 
 ### 🤖 写作 Agent（工具调用循环）
-- `src/ai/agent/`：AgentService（循环）+ StoryToolsService（11 个工具按权限分层：读 8 个 search_story / get_characters / get_outline / get_recent_chapters / get_chapter / list_chapters / get_character_relations / list_inspirations；写 2 个 save_inspiration / save_character（按名查重）；审阅 1 个 diff_edit 不落库。章节正文无写工具——agent 只有提案权）
+- `src/ai/agent/`：AgentRuntimeService（统一循环）+ AgentService（显式 Agent 入口）+ StoryToolsService（11 个工具按权限分层：读 8 个 search_story / get_characters / get_outline / get_recent_chapters / get_chapter / list_chapters / get_character_relations / list_inspirations；写 2 个 save_inspiration / save_character（按名查重）；审阅 1 个 diff_edit 不落库。章节正文无写工具——agent 只有提案权）
 - 初始上下文只带作品名/简介，人物/大纲/前文由模型按需调工具取（区别于 story-memory 的预拼装）
-- 轮内用非流式 chat + OpenAI 兼容 function calling（tools/tool_calls 已由 LlmClient 接口支持）；最多 4 轮，死循环后摘工具表收官
+- `AgentRuntimeService` 是所有生成端点的统一执行器：非流式工具决策 + function calling + 最终生成；普通聊天/写作/润色/大纲仅允许只读工具，人物抽取跳过工具决策。最多 4 轮、每轮最多执行 3 个工具；逐个校验参数和权限，每个 tool_call 都回灌对应结果
+- SSE 在工具决策结束后转发真实最终生成流，支持等待背压及取消传播；不再对非流式全文分块回放。现有作品记忆保留为初始背景，按需工具补充上下文
 - 工具异常/未知工具/坏 JSON 参数统一转为 ok:false 文本喂回模型，不中断循环
 
 ### 🔐 用户认证

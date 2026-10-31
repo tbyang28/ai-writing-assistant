@@ -221,6 +221,10 @@ describe('POST /api/ai/agent/stream（SSE）', () => {
         },
         { answer: '李四是主角，正在流浪。' },
       ]),
+      chatStream: async function* () {
+        yield '李四是主角，';
+        yield '正在流浪。';
+      },
     }),
   );
 
