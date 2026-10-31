@@ -4,7 +4,7 @@
 
 **[在线体验](https://ai-writing-assistant-web.onrender.com/discover)** · **[后端健康检查](https://ai-writing-assistant-api-o4nb.onrender.com/api/health)** · **[线上版本源码](https://github.com/tbyang28/ai-writing-assistant/tree/feat/public-community)**
 
-> 当前线上服务跟随 `feat/public-community` 分支，包含社区阅读和新版 AI 编辑流程。`main` 保留作者创作核心；本文展示线上版本，本地复现请使用上述分支。当前后端为 `backend-ts/`（NestJS + Drizzle + PostgreSQL），部署使用这一套服务。
+> `main` 包含作者创作核心与统一自研 Agent 执行器，当前后端部署记录跟随 `main`。`feat/public-community` 另含社区阅读和新版前端编辑流程，本文中的社区截图与体验说明对应该分支。当前后端为 `backend-ts/`（NestJS + Drizzle + PostgreSQL）。
 
 ## 核心功能
 
@@ -252,7 +252,7 @@ npm run build
 
 仓库提供 `render.yaml`，通过 Render Blueprint 创建 NestJS Web Service 和 Vue 静态站点：
 
-1. 连接 GitHub 仓库，并选择要部署的分支；当前线上为 `feat/public-community`。
+1. 连接 GitHub 仓库，并确认各服务的部署分支；当前后端部署记录使用 `main`，社区完整版本位于 `feat/public-community`。
 2. 配置后端 `DATABASE_URL`、`SILICONFLOW_API_KEY` 和 JWT 密钥；数据库需支持 pgvector。
 3. 将前端 `VITE_API_URL` 设置为后端公网地址加 `/api`，然后重新构建前端。
 4. 后端启动时通过 `RUN_MIGRATIONS=true` 执行增量迁移。
