@@ -139,7 +139,7 @@ flowchart TD
 
 ### 多模型接入
 
-前端选择模型后在请求中传入 `model`，Agent 执行器通过 `SiliconFlowClient` 调用所选模型。未指定时使用 `DEEPSEEK_MODEL` 环境变量；需要工具决策的任务要求模型支持兼容的 function calling。
+前端选择模型后在请求中传入 `model`，Agent 执行器通过 `RoutedLlmClient` 路由：云端模型交给 `SiliconFlowClient`，已配对并启用的本机模型交给受限连接器。未指定时使用 `DEEPSEEK_MODEL` 环境变量；本机模型未验证工具能力时自动禁用工具，不自动切换到云端。
 
 | 面板选项 | 模型 ID |
 |----------|---------|
@@ -148,7 +148,20 @@ flowchart TD
 | GLM-4.7 | `zai-org/GLM-4.7` |
 | MiniMax-M2.5 | `MiniMaxAI/MiniMax-M2.5` |
 
-实际可调用模型取决于 SiliconFlow 账号和服务端配置。
+实际可调用云端模型取决于 SiliconFlow 账号和服务端配置。
+
+### 连接自己电脑上的模型
+
+`main` 分支新增 **模型连接** 页面（`/settings/models`）。在运行 Ollama / LM Studio 的电脑上，从可信仓库获取连接器并运行：
+
+```bash
+cd local-connector
+npm start -- --server https://ai-writing-assistant-api-o4nb.onrender.com/api
+```
+
+在网页生成一次性配对码，按终端提示输入；网页刷新后检查设备、明确允许传输作品上下文并启用，再在编辑器选择本机模型。完整步骤、固定端口、可选本机 key 和故障处理见 [连接器说明](local-connector/README.md)。
+
+连接器不读取 CLI 登录凭证、不执行本机命令、不开放监听端口，不接受云端指定的 URL。Claude/Codex/Copilot 仅检测安装存在。RAG/embedding 仍由平台处理；本机失败不会自动回退云端。v1 要求单后端实例，重启需重新配对并重新发起在途任务。设计依据见 [Magpie / Multica 固定源码调研](docs/research/2026-11-02-local-provider-discovery.md)。
 
 ## 快速开始
 
@@ -251,7 +264,7 @@ npm test
 npm run build
 ```
 
-测试库使用 `localhost:5434/ai_writing_test`，与开发库分开。具体用例数量随分支变化，以执行结果为准。
+测试库使用 `localhost:5434/ai_writing_test`，与开发库分开；可用 `TEST_DATABASE_URL` 指定隔离库。当前 main 的本机模型功能验证：后端 440 个、前端 43 个测试；连接器 `npm --prefix local-connector test` 含 33 个实际测试与 1 个辅助模块加载。另用运行中的前后端、真实连接器与可控假 Ollama 服务，验证网页配对后启用、选择模型生成、停止 Agent 和撤销连接；未调用真实模型。具体用例数量随分支变化，以执行结果为准。
 
 ## Render 部署
 

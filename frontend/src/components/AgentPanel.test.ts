@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive, type App } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { api } from '@/api'
 import AiPanel from './AiPanel.vue'
 import { useAgentStore } from '@/stores/agent'
@@ -33,7 +34,8 @@ function mount() {
   const props = reactive({ bookId: 'book-1', chapterId: 'chapter-1', chapterContent: '未保存的当前正文' })
   const apply = vi.fn()
   app = createApp({ render: () => h(AiPanel, { ...props, onApplyChange: apply }) })
-  app.use(pinia).mount(root)
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }, { path: '/settings/models', component: { render: () => null } }] })
+  app.use(pinia).use(router).mount(root)
   return { props, apply, store: useAgentStore(pinia), book: useBookStore(pinia) }
 }
 async function openAgent() { button('Agent').click(); await tick() }

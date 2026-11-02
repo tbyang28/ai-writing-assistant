@@ -30,6 +30,8 @@ export interface LlmToolCall {
 export interface LlmCallOptions {
   messages: ChatMessage[];
   model?: string;
+  /** 仅由服务端从已授权作品取得，不接受请求体提供；用于本机连接的账号隔离。 */
+  accountId?: string;
   /** 默认 4096 */
   maxTokens?: number;
   /** 默认 0.7 */
@@ -106,6 +108,7 @@ export class LlmHttpError extends Error {
 
 /** 与 SiliconFlow 交互的最小接口：chat / chatStream / embed */
 export interface LlmClient {
+  modelCapabilities?(model?: string, accountId?: string): Promise<{ tools: boolean; contextWindow?: number }>;
   chat(options: LlmCallOptions): Promise<LlmResult>;
   chatStream(options: LlmCallOptions): AsyncIterable<string>;
   /** 生产适配器的统一文本/工具流；可选以兼容已有第三方适配器。 */

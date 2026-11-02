@@ -32,6 +32,12 @@ const navGroups = computed(() => [
     ],
   },
   {
+    label: '设置',
+    items: [
+      { path: '/settings/models', label: '模型连接', icon: 'models', active: route.path === '/settings/models' },
+    ],
+  },
+  {
     label: '数据回顾',
     items: [
       { path: '/stats', label: '写作统计', icon: 'chart', active: route.path === '/stats' },
@@ -124,6 +130,9 @@ async function handleLogout() {
               </svg>
               <svg v-else-if="item.icon === 'sparkle'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 3l1.9 5.7a2 2 0 0 0 1.4 1.4L21 12l-5.7 1.9a2 2 0 0 0-1.4 1.4L12 21l-1.9-5.7a2 2 0 0 0-1.4-1.4L3 12l5.7-1.9a2 2 0 0 0 1.4-1.4L12 3z" />
+              </svg>
+              <svg v-else-if="item.icon === 'models'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="13" rx="2" /><path d="M8 21h8m-4-5v5M8 8h8m-8 4h4" />
               </svg>
               <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" x2="18" y1="20" y2="10" />

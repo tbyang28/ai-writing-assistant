@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { api } from '@/api'
+import { useAuthStore } from './auth'
 
 export const useAiStore = defineStore('ai', () => {
   const HISTORY_PREFIX = 'ai-writing-assistant:chat-history'
@@ -13,8 +14,10 @@ export const useAiStore = defineStore('ai', () => {
   const pendingInsert = ref<string | null>(null)
   const chatMessages = ref<Array<{ role: string; content: string }>>([])
   const activeHistoryKey = ref<string | null>(null)
-  // 当前选中的模型 ID（SiliconFlow model ID）
+  // Cloud ID or the server-issued local model value. Never silently fall back on disconnect.
   const selectedModel = ref<string | null>(null)
+  const auth = useAuthStore()
+  watch(() => [auth.token, auth.user?.id], () => { selectedModel.value = null }, { flush: 'sync' })
 
   type PolishDiffResult = {
     original: string

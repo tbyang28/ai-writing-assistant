@@ -37,7 +37,7 @@ async function seed(value = proposal()) {
 
 beforeEach(() => {
   setActivePinia(createPinia())
-  vi.stubGlobal('localStorage', { getItem: vi.fn(() => 'jwt') })
+  vi.stubGlobal('localStorage', { getItem: vi.fn((key: string) => key === 'token' ? 'jwt' : null), setItem: vi.fn(), removeItem: vi.fn() })
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 

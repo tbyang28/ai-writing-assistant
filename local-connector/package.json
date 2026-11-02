@@ -1,0 +1,12 @@
+{
+  "name": "ai-writing-local-connector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "ai-writing-local-connector": "./src/cli.mjs" },
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "test": "node --test"
+  }
+}

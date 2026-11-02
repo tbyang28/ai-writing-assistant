@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useAgentStore, type AgentTurn } from '@/stores/agent'
 import AgentProposalCard from './AgentProposalCard.vue'
+import { useLocalProvidersStore } from '@/stores/localProviders'
 
 const props = defineProps<{ bookId: string; chapterId?: string; chapterContent?: string; model?: string | null; blocked?: boolean }>()
 const emit = defineEmits<{ review: [] }>()
@@ -10,7 +11,9 @@ const input = ref('')
 const composing = ref(false)
 const scrollRef = ref<HTMLElement | null>(null)
 let followOutput = true
-const busy = computed(() => agent.isLoading || props.blocked)
+const localCatalog = useLocalProvidersStore()
+const localStatus = computed(() => localCatalog.modelStatus(props.model))
+const busy = computed(() => agent.isLoading || props.blocked || localStatus.value?.unavailable)
 const toolNames: Record<string, string> = {
   search_story: '检索作品内容', get_characters: '读取人物设定', get_outline: '读取大纲',
   get_recent_chapters: '读取最近章节', get_chapter: '读取章节', list_chapters: '查看章节目录',
@@ -61,6 +64,8 @@ function retry(turn: AgentTurn) {
         <p class="mt-1">正文修改仍需通过写作工具审阅后写回。</p>
         <button type="button" class="review-link mt-1 text-xs underline underline-offset-4" @click="emit('review')">前往正文审阅</button>
       </div>
+      <p v-if="localStatus?.unavailable" class="agent-note rounded-xl border p-3 text-xs leading-5" role="status">{{ localStatus.message }}</p>
+      <p v-else-if="localStatus && !localStatus.tools" class="agent-note rounded-xl border p-3 text-xs leading-5" role="status">此本地模型不支持工具调用，服务端会自动禁用工具。Agent 可基于已提供的上下文回答，无法检索作品或生成工具提案。需要这些能力时，请手动选择支持工具的模型。</p>
       <p v-if="!agent.turns.length" class="text-sm leading-6 secondary py-4">例如：检查主角的设定是否矛盾，并整理一条后续情节灵感。</p>
       <article v-for="turn in agent.turns" :key="turn.id" class="space-y-3" aria-label="Agent 对话">
         <div class="text-right"><div class="question inline-block rounded-2xl rounded-tr-md px-3.5 py-2.5 text-sm whitespace-pre-wrap break-words max-w-[95%]">{{ turn.question }}</div></div>

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { LLM_CLIENT } from '../ai/llm/llm-client.interface';
 import { SiliconFlowClient } from '../ai/llm/silicon-flow.client';
+import { RoutedLlmClient } from '../ai/llm/routed-llm.client';
+import { LocalProvidersModule } from '../local-providers/local-providers.module';
 import { RagService } from './rag.service';
 
 /**
@@ -9,8 +11,10 @@ import { RagService } from './rag.service';
  * LLM_CLIENT 在这里注册一次。
  */
 @Module({
+  imports: [LocalProvidersModule],
   providers: [
-    { provide: LLM_CLIENT, useClass: SiliconFlowClient },
+    SiliconFlowClient,
+    { provide: LLM_CLIENT, useClass: RoutedLlmClient },
     RagService,
   ],
   exports: [LLM_CLIENT, RagService],

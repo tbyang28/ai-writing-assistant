@@ -43,6 +43,14 @@
 - save_character/save_inspiration 仅创建 20 分钟有效的 agent_proposals；编辑器「AI 助手 → Agent」展示参数，用户确认接口才事务写入。摘要绑定用户/作品/参数/有效期，JWT 与归属重检、行锁防重复确认，同名人物复用。
 - Agent SSE 增加 run_start/run_end、runId/seq、callId、proposal；普通写作仍为 token→done→[DONE]，支持背压。工具异常/未知工具/坏参数回灌 ok:false，取消单独传播；取消不会撤销已提交操作。
 
+### 💻 本机模型连接
+- 导航「模型连接」（`/settings/models`）通过一次性配对绑定用户主动启动的 Node 20+ 连接器，明确启用后在编辑器选择 Ollama / LM Studio 模型。
+- `local-connector/` 仅出站轮询，不开本机端口；只访问固定 loopback 11434/1234，不跟随重定向。CLI 仅检查 PATH 存在，不执行、不读取登录/密钥。
+- `local_model_connections` 只保存令牌哈希和清单；runtime token 不能访问 JWT 账号接口或确认提案。每次生成依据服务端作品 owner 校验，停用/撤销取消任务，无云端回退。
+- `RoutedLlmClient` 路由云端/本机，embedding 保持现有供应商；未验证工具能力则禁用工具，本机上下文预算按发现窗口调整输出预留。
+- v1 单后端实例、有限内存队列：配对码 5 分钟单次使用，每账号 5 台设备，每连接 2 任务、全局 32，120 秒截止、64 事件背压、200KB 输入/20万字符输出/1MB 事件；重启不重放任务。
+- 使用与边界见 `local-connector/README.md`、`docs/local-provider-contract.md`；固定源码依据见 `docs/research/2026-11-02-local-provider-discovery.md`。
+
 ### 🔐 用户认证
 - JWT Token 认证（HS256，payload `{sub, exp}`）
 - bcrypt 密码加密（兼容 Python 版 `$2b$` 哈希，数据可直接迁移）
@@ -66,7 +74,7 @@
 | AI 模型 | DeepSeek-V3.2 / GLM-4 / MiniMax（SiliconFlow） | - |
 | 向量模型 | BAAI/bge-large-zh-v1.5 | - |
 | 部署 | Docker + Docker Compose | - |
-| 测试 | Vitest + supertest（**354 个用例**） | ^3.2 |
+| 测试 | Vitest + supertest（**440 个用例**） | ^3.2 |
 
 > 旧版 Python 技术栈（已删除）：FastAPI + SQLAlchemy + SQLite。
 
@@ -132,7 +140,7 @@ ai-writing-assistant/
 │   │   │   │                   #   text-diff、extraction、llm/（undici SiliconFlow 客户端）
 │   │   ├── rag/                # RAG：切块/余弦/pgvector 索引与检索
 │   │   └── shared/             # chinese-number、text（码点级 wordCount/切片）
-│   ├── test/                   # 354 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
+│   ├── test/                   # 440 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
 │   ├── tools/import-sqlite.ts  # 旧 SQLite 数据 → PostgreSQL 一次性迁移
 │   ├── drizzle.config.ts / Dockerfile / vitest.config.ts
 ├── backend/                    #（已删除；旧 Python 实现见 git 历史）
@@ -213,7 +221,7 @@ ai-writing-assistant/
 ```bash
 cd backend-ts
 docker compose up -d postgres-test   # 测试库（localhost:5434）
-npm test                             # Vitest：24 个文件 / 354 个用例
+npm test                             # Vitest：27 个文件 / 440 个用例
 npx tsc --noEmit                     # 类型检查
 ```
 
@@ -290,7 +298,7 @@ RUN_MIGRATIONS=true                 # 启动时自动跑迁移（compose/render 
 | **跨后端兼容** | 同 SECRET_KEY 下新旧 token 互认；Python $2b$ 哈希在 TS 侧可直接验证 |
 | **安全修复** | 补 3 处越权写洞（outline/character/inspiration 创建）；FK 真级联（删章不再孤儿化向量块） |
 | **性能修复** | stats 由 N+1 重写为 2-3 条聚合查询；nginx 剥前缀 bug 修复 |
-| **测试** | 后端 354 个、前端 30 个；覆盖越权/级联/SSE/预算/并发/取消/提案事务和交互 |
+| **测试** | 后端 440 个、前端 43 个，连接器 33 个实际测试；覆盖越权/级联/SSE/预算/并发/取消/提案事务/本机配对、令牌隔离、队列限额和交互 |
 
 ---
 

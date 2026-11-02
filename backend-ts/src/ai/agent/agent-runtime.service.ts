@@ -92,7 +92,8 @@ export class AgentRuntimeService {
       (options.book.description ? `\n简介：${codePointSlice(options.book.description, 0, 300)}` : '') });
     const capabilities = new Set(options.capabilities ?? (options.allowWrites
       ? ['read', 'review', 'propose_inspiration', 'propose_character'] : ['read']));
-    const specs = options.useTools === false ? [] : this.tools.specs.filter((s) =>
+    const modelCapabilities = await this.llm.modelCapabilities?.(options.model, options.book.ownerId);
+    const specs = options.useTools === false || modelCapabilities?.tools === false ? [] : this.tools.specs.filter((s) =>
       ((READ_TOOLS.has(s.name) && capabilities.has('read')) ||
        (s.name === 'diff_edit' && capabilities.has('review')) ||
        (s.name === 'save_inspiration' && capabilities.has('propose_inspiration')) ||
@@ -100,12 +101,19 @@ export class AgentRuntimeService {
       (options.includeRag !== false || s.name !== 'search_story'));
     const allowed = new Map(specs.map((s) => [s.name, s]));
     const coveredSources = [...(options.initialSources ?? [])];
+    const maxTokens = modelCapabilities?.contextWindow
+      ? Math.min(options.maxTokens ?? 4096, Math.floor(modelCapabilities.contextWindow / 4))
+      : options.maxTokens;
     const callOptions = (withTools: boolean): LlmCallOptions => {
       const activeSpecs = withTools ? specs : [];
       const prepared = prepareContext(messages, activeSpecs, {
-        ...options.contextBudget, maxOutputTokens: options.maxTokens ?? 4096,
+        ...options.contextBudget,
+        ...(modelCapabilities?.contextWindow ? { contextWindow: Math.min(
+          options.contextBudget?.contextWindow ?? modelCapabilities.contextWindow, modelCapabilities.contextWindow),
+          headroomTokens: Math.min(options.contextBudget?.headroomTokens ?? 1024, Math.floor(modelCapabilities.contextWindow / 8)) } : {}),
+        maxOutputTokens: maxTokens ?? 4096,
       });
-      return { messages: prepared.messages, model: options.model, maxTokens: options.maxTokens,
+      return { messages: prepared.messages, model: options.model, accountId: options.book.ownerId, maxTokens,
         temperature: options.temperature, signal: options.signal,
         ...(activeSpecs.length ? { tools: activeSpecs } : {}) };
     };

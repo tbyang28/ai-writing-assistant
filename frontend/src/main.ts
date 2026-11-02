@@ -12,6 +12,7 @@ const HomeView = () => import('./views/HomeView.vue')
 const BooksView = () => import('./views/BooksView.vue')
 const InspirationsView = () => import('./views/InspirationsView.vue')
 const StatsView = () => import('./views/StatsView.vue')
+const ModelsView = () => import('./views/ModelsView.vue')
 const EditorView = () => import('./views/EditorView.vue')
 
 function isTokenValid() {
@@ -48,6 +49,7 @@ const router = createRouter({
     { path: '/books', name: 'books', component: BooksView, beforeEnter: requireAuth },
     { path: '/inspirations', name: 'inspirations', component: InspirationsView, beforeEnter: requireAuth },
     { path: '/stats', name: 'stats', component: StatsView, beforeEnter: requireAuth },
+    { path: '/settings/models', name: 'models', component: ModelsView, beforeEnter: requireAuth },
     { path: '/editor/:id', name: 'editor', component: EditorView, beforeEnter: requireAuth },
   ],
 })

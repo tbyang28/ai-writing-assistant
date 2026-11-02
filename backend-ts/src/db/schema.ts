@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, pgTable, text, timestamp, uuid, vector } from 'drizzle-orm/pg-core';
+import { boolean, check, index, integer, pgTable, text, timestamp, uuid, vector } from 'drizzle-orm/pg-core';
 
 /**
  * 8 张历史业务表逐字段兼容 Python；另有 agent_proposals 保存用户确认流程。
@@ -132,6 +132,18 @@ export const agentProposals = pgTable(
   ],
 );
 
+/** 只存受限连接令牌的哈希和用户批准的模型清单，不保存本机 API 密钥或作品任务。 */
+export const localModelConnections = pgTable('local_model_connections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  enabled: boolean('enabled').notNull().default(false),
+  inventory: text('inventory').notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  ...timestamps,
+}, (table) => [index('local_model_connections_owner_idx').on(table.ownerId)]);
+
 export const documentChunks = pgTable(
   'document_chunks',
   {
@@ -160,6 +172,7 @@ export const schema = {
   characterRelations,
   inspirations,
   agentProposals,
+  localModelConnections,
   documentChunks,
 };
 
@@ -172,3 +185,4 @@ export type CharacterRelation = typeof characterRelations.$inferSelect;
 export type Inspiration = typeof inspirations.$inferSelect;
 export type DocumentChunk = typeof documentChunks.$inferSelect;
 export type AgentProposal = typeof agentProposals.$inferSelect;
+export type LocalModelConnection = typeof localModelConnections.$inferSelect;
