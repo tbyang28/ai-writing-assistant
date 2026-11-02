@@ -1,7 +1,8 @@
-import { index, integer, pgTable, text, timestamp, uuid, vector } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { check, index, integer, pgTable, text, timestamp, uuid, vector } from 'drizzle-orm/pg-core';
 
 /**
- * 8 张表 —— 逐字段镜像 Python 侧 models/*。
+ * 8 张历史业务表逐字段兼容 Python；另有 agent_proposals 保存用户确认流程。
  *
  * 相对 Python 版的刻意升级（契约不变，行为修复）：
  *   1. 真 FK + ON DELETE CASCADE：SQLite 版无 FK 约束，删章节会孤儿化
@@ -107,6 +108,30 @@ export const inspirations = pgTable('inspirations', {
   ...timestamps,
 });
 
+/** Agent 写操作必须先提案；args/result 为经过服务端校验的 JSON 文本。 */
+export const agentProposals = pgTable(
+  'agent_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookId: uuid('book_id').notNull().references(() => books.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    tool: text('tool').notNull(),
+    args: text('args').notNull(),
+    digest: text('digest').notNull(),
+    status: text('status').notNull().default('pending'),
+    result: text('result'),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    index('agent_proposals_book_id_idx').on(table.bookId),
+    index('agent_proposals_owner_id_idx').on(table.ownerId),
+    check('agent_proposals_tool_check', sql`${table.tool} in ('save_character', 'save_inspiration')`),
+    check('agent_proposals_status_check', sql`${table.status} in ('pending', 'confirmed', 'cancelled')`),
+    check('agent_proposals_result_check', sql`(${table.status} = 'confirmed') = (${table.result} is not null)`),
+  ],
+);
+
 export const documentChunks = pgTable(
   'document_chunks',
   {
@@ -134,6 +159,7 @@ export const schema = {
   characters,
   characterRelations,
   inspirations,
+  agentProposals,
   documentChunks,
 };
 
@@ -145,3 +171,4 @@ export type Character = typeof characters.$inferSelect;
 export type CharacterRelation = typeof characterRelations.$inferSelect;
 export type Inspiration = typeof inspirations.$inferSelect;
 export type DocumentChunk = typeof documentChunks.$inferSelect;
+export type AgentProposal = typeof agentProposals.$inferSelect;

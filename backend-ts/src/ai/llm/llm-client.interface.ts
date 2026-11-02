@@ -40,10 +40,53 @@ export interface LlmCallOptions {
   tools?: LlmToolSpec[];
 }
 
+export type LlmFinishReason = 'stop' | 'tool_calls' | 'length' | 'error' | 'aborted' | 'unknown';
+
+export interface LlmUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+}
+
+export interface LlmAttempt {
+  durationMs: number;
+  status: 'completed' | 'failed';
+  usage?: LlmUsage;
+}
+
+/** 保留原异常类型/错误文案，同时让执行器获知全部失败重试（不含正文）。 */
+const failureAttempts = new WeakMap<object, LlmAttempt[]>();
+export function recordLlmFailure(error: unknown, attempts: LlmAttempt[]): void {
+  if (error !== null && (typeof error === 'object' || typeof error === 'function')) {
+    failureAttempts.set(error, [...attempts]);
+  }
+}
+export function getLlmFailureAttempts(error: unknown): LlmAttempt[] | undefined {
+  return error !== null && (typeof error === 'object' || typeof error === 'function')
+    ? failureAttempts.get(error) : undefined;
+}
+
 export interface LlmResult {
   answer: string;
-  /** 模型本轮请求的工具调用；为空表示这一轮就是最终回答 */
   toolCalls?: LlmToolCall[];
+  finishReason?: LlmFinishReason;
+  rawFinishReason?: string;
+  usage?: LlmUsage;
+  /** 每次上游请求只计一次；失败重试未报告的 usage 保持未知。 */
+  attempts?: LlmAttempt[];
+}
+
+export type LlmStreamEvent =
+  | { type: 'text'; text: string }
+  | { type: 'tool_call_delta'; index: number; id?: string; name?: string; arguments?: string }
+  | { type: 'done'; result: LlmResult };
+
+export class LlmIncompleteError extends Error {
+  constructor(readonly reason: LlmFinishReason) {
+    super(reason === 'length' ? 'AI 输出达到长度上限，结果不完整，请缩小范围后重试' : 'AI 响应未正常完成，请重试');
+    this.name = 'LlmIncompleteError';
+  }
 }
 
 /**
@@ -65,6 +108,8 @@ export class LlmHttpError extends Error {
 export interface LlmClient {
   chat(options: LlmCallOptions): Promise<LlmResult>;
   chatStream(options: LlmCallOptions): AsyncIterable<string>;
+  /** 生产适配器的统一文本/工具流；可选以兼容已有第三方适配器。 */
+  streamEvents?(options: LlmCallOptions): AsyncIterable<LlmStreamEvent>;
   /** embeddings 端点（RAG 用），返回与输入等长的向量数组 */
-  embed(texts: string[]): Promise<number[][]>;
+  embed(texts: string[], signal?: AbortSignal): Promise<number[][]>;
 }

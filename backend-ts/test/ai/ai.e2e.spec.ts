@@ -266,6 +266,43 @@ describe('POST /api/ai/write', () => {
 });
 
 describe('普通写作统一使用 Agent 执行器', () => {
+  it('生产事件流无工具时只请求一次，保持 token/done 协议', async () => {
+    let requests = 0;
+    const agentApp = await buildTestApp({
+      chat: async () => { throw new Error('不应额外请求非流式决策'); },
+      streamEvents: async function* () {
+        requests++;
+        yield { type: 'text', text: '完整正文' };
+        yield { type: 'done', result: { answer: '完整正文', finishReason: 'stop' } };
+      },
+    });
+    try {
+      const { auth } = await registerUser(agentApp, 'write-unified-stream@test.dev');
+      const book = await request(agentApp.getHttpServer()).post('/api/books').set(auth).send({ title: '青云志' });
+      const res = await request(agentApp.getHttpServer()).post('/api/ai/write/stream').set(auth)
+        .send({ book_id: book.body.id, command: 'improve', content: '原文' });
+      expect(res.status).toBe(200);
+      expect(requests).toBe(1);
+      expect(jsonFrames(res.text).map((f) => f.type)).toEqual(['token', 'done']);
+    } finally { await agentApp.close(); }
+  });
+
+  it('截断润色流只返回错误，不产生可应用 result/done', async () => {
+    const agentApp = await buildTestApp({ streamEvents: async function* () {
+      yield { type: 'text', text: '截断正文' };
+      yield { type: 'done', result: { answer: '截断正文', finishReason: 'length' } };
+    } });
+    try {
+      const { auth } = await registerUser(agentApp, 'polish-truncated-stream@test.dev');
+      const book = await request(agentApp.getHttpServer()).post('/api/books').set(auth).send({ title: '青云志' });
+      const res = await request(agentApp.getHttpServer()).post('/api/ai/polish-diff/stream').set(auth)
+        .send({ book_id: book.body.id, content: '少年拔剑。' });
+      expect(res.status).toBe(200);
+      expect(jsonFrames(res.text).map((f) => f.type)).toEqual(['meta', 'error']);
+      expect(res.text).toContain('长度上限');
+      expect(sseFrames(res.text).at(-1)).toBe('[DONE]');
+    } finally { await agentApp.close(); }
+  });
   it('write 入口可多轮读取人物设定后完成正文，保持原响应格式', async () => {
     let turn = 0;
     const agentApp = await buildTestApp({ chat: async () => ++turn === 1
@@ -282,7 +319,8 @@ describe('普通写作统一使用 Agent 执行器', () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ data: { answer: '张三拔出长剑。' } });
       const result = llmCalls.at(-1)!.messages.find((message) => message.toolCallId === 'read-character');
-      expect(result?.content).toContain('张三');
+      expect(result?.content).toContain('同版本、同范围资料已在本次上下文中');
+      expect(llmCalls.at(-1)!.messages.find((m) => m.role === 'user')?.content).toContain('- 张三（主角）：剑客');
       expect(llmCalls.at(-1)!.messages[0].content).toBe(SYSTEM_PROMPTS.continue);
     } finally {
       await agentApp.close();

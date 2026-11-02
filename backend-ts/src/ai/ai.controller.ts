@@ -25,6 +25,7 @@ import { parseCharacterExtraction } from './extraction';
 import { extractAiError } from './extract-error';
 import type { LlmCallOptions } from './llm/llm-client.interface';
 import { AgentRuntimeService } from './agent/agent-runtime.service';
+import type { ContextSource } from './agent/context-sources';
 import {
   buildContinuePrompt,
   buildContextualChatPrompt,
@@ -75,17 +76,19 @@ export class AiController {
     const book = await this.verifyBookAccess(data.book_id, user.id);
     try {
       const memoryQuery = data.current_content || data.message;
+      const initialSources: ContextSource[] = [];
       const storyMemory = await this.memory.buildStoryMemory(
         book,
         memoryQuery,
         data.chapter_id ?? null,
         data.current_content ?? null,
+        { onSources: (sources) => initialSources.push(...sources) },
       );
       const userMsg = buildContextualChatPrompt(data.message, storyMemory);
       const result = await this.generate(book, {
         messages: buildMessages('chat', userMsg, data.history ?? undefined),
         model: data.model ?? undefined,
-      });
+      }, { initialSources });
       return { data: { answer: result.answer } };
     } catch (e) {
       throw internalAiError(e);
@@ -100,11 +103,12 @@ export class AiController {
   ) {
     const book = await this.verifyBookAccess(data.book_id, user.id);
     try {
-      const userMsg = await this.buildWritePrompt(data, book);
+      const initialSources: ContextSource[] = [];
+      const userMsg = await this.buildWritePrompt(data, book, undefined, initialSources);
       const result = await this.generate(book, {
         messages: buildMessages(data.command, userMsg),
         model: data.model ?? undefined,
-      });
+      }, { initialSources });
       return { data: { answer: result.answer } };
     } catch (e) {
       throw internalAiError(e);
@@ -128,7 +132,7 @@ export class AiController {
         model: data.model ?? undefined,
         maxTokens: call.maxTokens,
         temperature: 0.35,
-      }, { includeRag: false });
+      }, { includeRag: false, initialSources: call.initialSources });
       return { data: this.buildPolishDiffResponse(call, result.answer ?? '') };
     } catch (e) {
       throw internalAiError(e);
@@ -237,7 +241,7 @@ export class AiController {
         signal: abort.signal,
         stream: true,
         emit: (event) => event.type === 'token'
-          ? this.writeToken(res, event.text)
+          ? this.writeToken(res, event.text, { runId: event.runId, seq: event.seq })
           : this.writeAgentEvent(res, event),
       });
       this.finishSse(res);
@@ -252,29 +256,9 @@ export class AiController {
     if (res.destroyed || res.writableEnded) {
       return;
     }
-    switch (event.type) {
-      case 'step':
-        this.writeSse(res, {
-          type: 'step',
-          data: { round: event.round, thought: event.thought },
-        });
-        break;
-      case 'tool_call':
-        this.writeSse(res, {
-          type: 'tool_call',
-          data: { round: event.round, name: event.name, args: event.args },
-        });
-        break;
-      case 'tool_result':
-        this.writeSse(res, {
-          type: 'tool_result',
-          data: { round: event.round, name: event.name, ok: event.ok, content: event.preview },
-        });
-        break;
-      case 'token':
-        this.writeSse(res, { type: 'token', data: { text: event.text } });
-        break;
-    }
+    const { type, ...data } = event;
+    this.writeSse(res, { type, data: event.type === 'tool_result'
+      ? { ...data, content: event.preview } : data });
   }
 
   // ===================== 流式（SSE） =====================
@@ -289,18 +273,20 @@ export class AiController {
     const abort = this.startSse(res);
     try {
       const memoryQuery = data.current_content || data.message;
+      const initialSources: ContextSource[] = [];
       const storyMemory = await this.memory.buildStoryMemory(
         book,
         memoryQuery,
         data.chapter_id ?? null,
         data.current_content ?? null,
+        { signal: abort.signal, onSources: (sources) => initialSources.push(...sources) },
       );
       const userMsg = buildContextualChatPrompt(data.message, storyMemory);
       await this.pipeTokens(res, book, {
         messages: buildMessages('chat', userMsg, data.history ?? undefined),
         model: data.model ?? undefined,
         signal: abort.signal,
-      });
+      }, undefined, true, initialSources);
       this.finishSse(res);
     } catch (e) {
       this.writeErrorSafely(res, abort, e);
@@ -317,12 +303,13 @@ export class AiController {
     const book = await this.verifyBookAccess(data.book_id, user.id);
     const abort = this.startSse(res);
     try {
-      const userMsg = await this.buildWritePrompt(data, book);
+      const initialSources: ContextSource[] = [];
+      const userMsg = await this.buildWritePrompt(data, book, abort.signal, initialSources);
       await this.pipeTokens(res, book, {
         messages: buildMessages(data.command, userMsg),
         model: data.model ?? undefined,
         signal: abort.signal,
-      });
+      }, undefined, true, initialSources);
       this.finishSse(res);
     } catch (e) {
       this.writeErrorSafely(res, abort, e);
@@ -342,7 +329,7 @@ export class AiController {
     }
     const abort = this.startSse(res);
     try {
-      const call = await this.preparePolishDiffCall(data, book);
+      const call = await this.preparePolishDiffCall(data, book, abort.signal);
       this.writeSse(res, {
         type: 'meta',
         data: {
@@ -367,6 +354,7 @@ export class AiController {
         },
         (chunk) => revisedChunks.push(chunk),
         false,
+        call.initialSources,
       );
 
       this.writeSse(res, {
@@ -399,7 +387,8 @@ export class AiController {
   }
 
   /** write/write/stream 的 prompt 分派（continue 带作品记忆，其余是短模板） */
-  private async buildWritePrompt(data: AiWriteInput, book: Book): Promise<string> {
+  private async buildWritePrompt(data: AiWriteInput, book: Book, signal?: AbortSignal,
+    initialSources: ContextSource[] = []): Promise<string> {
     const command = data.command;
     const content = data.selected_text || data.content;
 
@@ -409,6 +398,7 @@ export class AiController {
         content,
         data.chapter_id ?? null,
         data.content,
+        { signal, onSources: (sources) => initialSources.push(...sources) },
       );
       return buildContinuePrompt(content, storyMemory);
     }
@@ -425,7 +415,7 @@ export class AiController {
   }
 
   /** polish-diff 的调用准备（截断、指令、消息、预算）—— _prepare_polish_diff_call */
-  private async preparePolishDiffCall(data: AiPolishDiffInput, book: Book) {
+  private async preparePolishDiffCall(data: AiPolishDiffInput, book: Book, signal?: AbortSignal) {
     const original = (data.selected_text || data.content || '').trim();
 
     const originalForAi = codePointSlice(original, 0, 3000);
@@ -433,6 +423,7 @@ export class AiController {
     const instruction = (
       data.instruction || '在保留原意和剧情的基础上，让文字更自然、更有画面感。'
     ).trim();
+    const initialSources: ContextSource[] = [];
     const storyMemory = await this.memory.buildStoryMemory(
       book,
       originalForAi,
@@ -441,6 +432,8 @@ export class AiController {
       {
         ...POLISH_MEMORY_OPTIONS,
         currentChars: data.selected_text ? 800 : 0,
+        signal,
+        onSources: (sources) => initialSources.push(...sources),
       },
     );
     const userMsg =
@@ -459,6 +452,7 @@ export class AiController {
       originalLength: codePointLength(original),
       processedLength: codePointLength(originalForAi),
       maxTokens: estimatePolishDiffMaxTokens(originalForAi),
+      initialSources,
     };
   }
 
@@ -507,8 +501,9 @@ export class AiController {
   }
 
   /** token 帧写入：写缓冲满时等排空（背压），与 close 竞速避免客户端断开后悬挂 */
-  private async writeToken(res: Response, text: string): Promise<void> {
-    if (res.write(`data: ${JSON.stringify({ type: 'token', data: { text } })}\n\n`)) {
+  private async writeToken(res: Response, text: string, metadata?: { runId: string; seq: number }): Promise<void> {
+    if (res.destroyed || res.writableEnded) return;
+    if (res.write(`data: ${JSON.stringify({ type: 'token', data: { text, ...metadata } })}\n\n`)) {
       return;
     }
     if (res.destroyed || res.writableEnded) {
@@ -521,7 +516,7 @@ export class AiController {
   private generate(
     book: Book,
     options: LlmCallOptions,
-    policy: { useTools?: boolean; includeRag?: boolean } = {},
+    policy: { useTools?: boolean; includeRag?: boolean; initialSources?: ContextSource[] } = {},
   ) {
     return this.runtime.run({ ...options, ...policy, book });
   }
@@ -533,11 +528,13 @@ export class AiController {
     options: LlmCallOptions,
     onToken?: (text: string) => void,
     includeRag = true,
+    initialSources: ContextSource[] = [],
   ): Promise<void> {
     await this.runtime.run({
       ...options,
       book,
       includeRag,
+      initialSources,
       stream: true,
       emit: async (event) => {
         if (event.type === 'token') {

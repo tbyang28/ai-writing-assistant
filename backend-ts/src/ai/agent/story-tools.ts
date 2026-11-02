@@ -11,9 +11,11 @@ import {
   type Book,
 } from '../../db/schema';
 import { RagService } from '../../rag/rag.service';
-import { codePointLength, codePointSlice, pyJsonDumpsAsciiList } from '../../shared/text';
+import { codePointLength, codePointSlice } from '../../shared/text';
+import { AgentProposalsService, type ProposalView } from './agent-proposals.service';
 import type { LlmToolSpec } from '../llm/llm-client.interface';
 import { buildTextDiff, summarizeDiff } from '../text-diff';
+import { sourceVersion, type ContextSource } from './context-sources';
 
 /** 单个工具结果的最大长度（防模型一次检索烧光上下文预算） */
 const TOOL_RESULT_MAX_CHARS = 1500;
@@ -25,6 +27,8 @@ const DIFF_INPUT_MAX_CHARS = 4000;
 export interface ToolExecResult {
   ok: boolean;
   content: string;
+  sources?: ContextSource[];
+  proposal?: ProposalView;
 }
 
 /**
@@ -37,7 +41,7 @@ export interface ToolExecResult {
  * 权限分层（面试常问点）：
  *   只读：search_story / get_characters / get_outline / get_recent_chapters / get_chapter
  *         list_chapters / get_character_relations / list_inspirations
- *   写：  save_inspiration / save_character —— 写草稿区与设定库（低危；save_character 按名查重）
+ *   提案：save_inspiration / save_character —— 只生成待确认提案，用户确认接口负责事务写入
  *   审阅：diff_edit —— 产出逐字差异报告但不落库，应用与否由用户决定
  * 高危写操作（改章节正文）刻意不做成工具：agent 只能提案，不能擅自改稿。
  */
@@ -46,6 +50,7 @@ export class StoryToolsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly rag: RagService,
+    private readonly proposals: AgentProposalsService,
   ) {}
 
   /** 工具规格（OpenAI 兼容 function calling 格式，喂给 LLM 的 tools 字段） */
@@ -104,7 +109,7 @@ export class StoryToolsService {
     {
       name: 'save_inspiration',
       description:
-        '把讨论中产生的好点子写入本书的灵感库（设定想法、桥段、金句等）。只有用户表达「记下来/存一下」一类意图时才调用。',
+        '为讨论中的点子生成灵感保存提案（尚不入库）。用户须在界面检查并确认后才会保存。只有用户表达「记下来/存一下」意图时才调用。',
       parameters: {
         type: 'object',
         properties: {
@@ -151,7 +156,7 @@ export class StoryToolsService {
     {
       name: 'save_character',
       description:
-        '把一个讨论定稿的人物写入人物设定库。只有用户表达「存进人物库/记下来」一类意图时才调用；同名人物已存在时不会重复创建。',
+        '生成一个人物保存提案（尚不入库），用户须检查并确认。只有用户表达「存进人物库/记下来」意图时才调用；确认时按作品内同名查重。',
       parameters: {
         type: 'object',
         properties: {
@@ -165,11 +170,12 @@ export class StoryToolsService {
   ];
 
   /** 工具分发：未知工具与执行异常都不抛出——返回 ok:false 的文本喂回模型让它自行消化 */
-  async execute(name: string, args: Record<string, unknown>, book: Book): Promise<ToolExecResult> {
+  async execute(name: string, args: Record<string, unknown>, book: Book, signal?: AbortSignal): Promise<ToolExecResult> {
+    signal?.throwIfAborted();
     try {
       switch (name) {
         case 'search_story':
-          return await this.searchStory(String(args.query ?? ''), book.id);
+          return await this.searchStory(String(args.query ?? ''), book.id, signal);
         case 'get_characters':
           return await this.getCharacters(asStringArray(args.names), book.id);
         case 'get_outline':
@@ -179,7 +185,7 @@ export class StoryToolsService {
         case 'get_chapter':
           return await this.getChapter(asOrderOrNull(args.order), book.id);
         case 'save_inspiration':
-          return await this.saveInspiration(args, book.id);
+          return await this.propose(name, args, book, signal);
         case 'diff_edit':
           return this.diffEdit(args);
         case 'list_chapters':
@@ -189,28 +195,35 @@ export class StoryToolsService {
         case 'list_inspirations':
           return await this.listInspirations(clampInspirationLimit(args.limit), book.id);
         case 'save_character':
-          return await this.saveCharacter(args, book.id);
+          return await this.propose(name, args, book, signal);
         default:
           return { ok: false, content: `未知工具：${name}。可用工具见系统说明。` };
       }
     } catch (e) {
+      signal?.throwIfAborted();
       return { ok: false, content: `工具执行失败：${e instanceof Error ? e.message : String(e)}` };
     }
   }
 
-  private async searchStory(query: string, bookId: string): Promise<ToolExecResult> {
+  /** 只读白名单才允许并发；新增工具默认串行。 */
+  isConcurrencySafe(name: string): boolean {
+    return ['get_characters', 'get_outline', 'get_recent_chapters', 'get_chapter',
+      'list_chapters', 'get_character_relations', 'list_inspirations', 'search_story'].includes(name);
+  }
+
+  private async searchStory(query: string, bookId: string, signal?: AbortSignal): Promise<ToolExecResult> {
     const q = query.trim();
     if (!q) {
       return { ok: false, content: 'search_story 需要非空的 query 参数。' };
     }
-    const results = await this.rag.searchSimilar(codePointSlice(q, 0, 500), bookId, 3);
+    const results = await this.rag.searchSimilar(codePointSlice(q, 0, 500), bookId, 3, signal);
     if (results.length === 0) {
       return { ok: true, content: '（未检索到相关前文片段）' };
     }
-    const lines = results.map(
-      (r, i) => `[片段${i + 1}·相关度${r.score}]\n${codePointSlice(r.content, 0, 400)}`,
-    );
-    return { ok: true, content: codePointSlice(lines.join('\n\n'), 0, TOOL_RESULT_MAX_CHARS) };
+    return sourceResult(results.map((r, i) => ({ ...r.source,
+      end: Math.min(codePointLength(r.content), 400),
+      text: `[片段${i + 1}·相关度${r.score}]\n${codePointSlice(r.content, 0, 400)}`,
+    })));
   }
 
   private async getCharacters(names: string[] | null, bookId: string): Promise<ToolExecResult> {
@@ -227,12 +240,12 @@ export class StoryToolsService {
     if (rows.length === 0) {
       return { ok: true, content: '（人物设定库为空）' };
     }
-    const lines = rows.map((c) => {
+    return sourceResult(rows.map((c) => {
       const role = c.role ? `（${c.role}）` : '';
-      const bio = c.bio ? `：${codePointSlice(c.bio, 0, 150)}` : '';
-      return `- ${c.name}${role}${bio}`;
-    });
-    return { ok: true, content: codePointSlice(lines.join('\n'), 0, TOOL_RESULT_MAX_CHARS) };
+      const bio = c.bio ? `：${codePointSlice(c.bio, 0, 120)}` : '';
+      return { id: `character:${c.id}`, version: c.updatedAt.toISOString(), start: 0,
+        end: Math.min(codePointLength(c.bio ?? ''), 120), text: `- ${c.name}${role}${bio}` };
+    }));
   }
 
   private async getOutline(bookId: string): Promise<ToolExecResult> {
@@ -245,10 +258,9 @@ export class StoryToolsService {
     if (rows.length === 0) {
       return { ok: true, content: '（尚无大纲）' };
     }
-    const lines = rows.map((o) =>
-      o.content ? `- ${o.title}：${codePointSlice(o.content, 0, 200)}` : `- ${o.title}`,
-    );
-    return { ok: true, content: codePointSlice(lines.join('\n'), 0, TOOL_RESULT_MAX_CHARS) };
+    return sourceResult(rows.map((o) => ({ id: `outline:${o.id}`, version: o.updatedAt.toISOString(),
+      start: 0, end: Math.min(codePointLength(o.content ?? ''), 180),
+      text: o.content ? `- ${o.title}：${codePointSlice(o.content, 0, 180)}` : `- ${o.title}` })));
   }
 
   private async getRecentChapters(limit: number, bookId: string): Promise<ToolExecResult> {
@@ -262,12 +274,12 @@ export class StoryToolsService {
     if (withContent.length === 0) {
       return { ok: true, content: '（尚无章节正文）' };
     }
-    const blocks = withContent.map((c) => {
+    return sourceResult(withContent.map((c) => {
       const text = c.content.trim();
-      const tail = codePointSlice(text, -CHAPTER_TAIL_CHARS);
-      return `【${c.title}】（结尾节选）\n${tail}`;
-    });
-    return { ok: true, content: codePointSlice(blocks.join('\n\n'), 0, TOOL_RESULT_MAX_CHARS) };
+      return { id: `chapter:${c.id}`, version: sourceVersion(text),
+        start: Math.max(0, codePointLength(text) - CHAPTER_TAIL_CHARS), end: codePointLength(text),
+        text: `【${c.title}】（结尾节选）\n${codePointSlice(text, -CHAPTER_TAIL_CHARS)}` };
+    }));
   }
 
   /** 读整章：默认最新一章，或按 order 序号取特定章 */
@@ -298,22 +310,11 @@ export class StoryToolsService {
     };
   }
 
-  /** 唯一的写工具：往灵感库插一行（tags 存 JSON 字符串，与设定库 API 契约一致） */
-  private async saveInspiration(
-    args: Record<string, unknown>,
-    bookId: string,
-  ): Promise<ToolExecResult> {
-    const content = String(args.content ?? '').trim();
-    if (!content) {
-      return { ok: false, content: 'save_inspiration 需要非空的 content 参数。' };
-    }
-    const title = String(args.title ?? '').trim() || codePointSlice(content, 0, 20);
-    const tags = asStringArray(args.tags) ?? [];
-    const [row] = await this.db
-      .insert(inspirations)
-      .values({ title, content: codePointSlice(content, 0, 2000), tags: pyJsonDumpsAsciiList(tags), bookId })
-      .returning({ id: inspirations.id });
-    return { ok: true, content: `已存入灵感库：「${title}」（id: ${row.id}）` };
+  /** 工具只能创建提案，业务实体由独立的用户确认接口写入。 */
+  private async propose(name: string, args: Record<string, unknown>, book: Book,
+    signal?: AbortSignal): Promise<ToolExecResult> {
+    const proposal = await this.proposals.create(book, name, args, signal);
+    return { ok: true, content: `已生成待确认提案 ${proposal.id}，尚未保存到设定库；请用户检查并确认。`, proposal };
   }
 
   /** diff_edit 不落库：只产出审阅报告（改动清单 + 改动占比护栏），由用户决定是否应用 */
@@ -405,37 +406,17 @@ export class StoryToolsService {
     return { ok: true, content: codePointSlice(lines.join('\n'), 0, TOOL_RESULT_MAX_CHARS) };
   }
 
-  /** 人物入库：按书名内名字查重，已存在则返回现状而不是制造重复行 */
-  private async saveCharacter(
-    args: Record<string, unknown>,
-    bookId: string,
-  ): Promise<ToolExecResult> {
-    const name = String(args.name ?? '').trim();
-    if (!name) {
-      return { ok: false, content: 'save_character 需要非空的 name 参数。' };
-    }
-    const role = String(args.role ?? '').trim(); // 列是 notNull default ''，空串而非 null
-    const bio = codePointSlice(String(args.bio ?? '').trim(), 0, 500);
+}
 
-    const existing = await this.db
-      .select()
-      .from(characters)
-      .where(and(eq(characters.bookId, bookId), eq(characters.name, name)))
-      .limit(1);
-    if (existing[0]) {
-      const c = existing[0];
-      return {
-        ok: true,
-        content: `人物「${name}」已在设定库中（${c.role || '身份未设定'}${c.bio ? `：${c.bio}` : ''}），未重复创建。`,
-      };
-    }
-
-    await this.db.insert(characters).values({ name, role, bio, bookId });
-    return {
-      ok: true,
-      content: `已入库人物：${name}${role ? `（${role}）` : ''}${bio ? `：${codePointSlice(bio, 0, 100)}` : ''}`,
-    };
+function sourceResult(items: ContextSource[]): ToolExecResult {
+  const sources: ContextSource[] = [];
+  let length = 0;
+  for (const item of items) {
+    const size = codePointLength(item.text) + 2;
+    if (length + size > TOOL_RESULT_MAX_CHARS) break;
+    sources.push(item); length += size;
   }
+  return { ok: true, content: sources.map((s) => s.text).join('\n\n') || '（资料超过单次返回限额，请缩小查询范围）', sources };
 }
 
 function asStringArray(value: unknown): string[] | null {

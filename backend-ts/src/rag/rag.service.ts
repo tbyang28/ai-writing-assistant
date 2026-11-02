@@ -4,6 +4,8 @@ import { and, cosineDistance, eq, isNotNull } from 'drizzle-orm';
 import { LLM_CLIENT, type LlmClient } from '../ai/llm/llm-client.interface';
 import { DRIZZLE, type Database } from '../db/drizzle.module';
 import { documentChunks } from '../db/schema';
+import { sourceVersion, type ContextSource } from '../ai/agent/context-sources';
+import { codePointLength } from '../shared/text';
 
 /** 每段文本切多大（字符数）—— Python 版常量一致 */
 export const CHUNK_SIZE = 500;
@@ -98,29 +100,36 @@ export class RagService {
   }
 
   /** 语义搜索：query 向量化后按余弦距离在库内取 top-k */
-  async searchSimilar(query: string, bookId: string, topK = TOP_K) {
-    const [queryVec] = await this.llm.embed([query]);
+  async searchSimilar(query: string, bookId: string, topK = TOP_K, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    const [queryVec] = await this.llm.embed([query], signal);
+    signal?.throwIfAborted();
     const distance = cosineDistance(documentChunks.embedding, queryVec);
 
     const rows = await this.db
-      .select({ content: documentChunks.content, distance })
+      .select({ id: documentChunks.id, content: documentChunks.content, distance })
       .from(documentChunks)
       .where(and(eq(documentChunks.bookId, bookId), isNotNull(documentChunks.embedding)))
       .orderBy(distance)
       .limit(topK);
 
+    signal?.throwIfAborted();
     return rows.map((row) => ({
       content: row.content,
+      source: { id: `chunk:${row.id}`, version: sourceVersion(row.content), start: 0,
+        end: codePointLength(row.content), text: row.content } satisfies ContextSource,
       score: round4(1 - Number(row.distance)),
     }));
   }
 
   /** 拼装 RAG 上下文块（[相关背景]…[/相关背景]），无结果返回空串 */
-  async buildRagContext(query: string, bookId: string): Promise<string> {
-    const results = await this.searchSimilar(query, bookId);
+  async buildRagContext(query: string, bookId: string, signal?: AbortSignal,
+    onSources?: (sources: ContextSource[]) => void): Promise<string> {
+    const results = await this.searchSimilar(query, bookId, TOP_K, signal);
     if (results.length === 0) {
       return '';
     }
+    onSources?.(results.map((r) => r.source));
     const lines = ['[相关背景]'];
     for (const r of results) {
       lines.push(r.content);

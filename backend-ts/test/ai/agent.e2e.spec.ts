@@ -5,6 +5,7 @@ import request from 'supertest';
 import { buildTestApp, llmCalls, registerUser, type FakeLlmOverrides } from '../utils/app';
 import { truncateAll, closeTestDb } from '../utils/db';
 import type { LlmResult } from '../../src/ai/llm/llm-client.interface';
+import type { ProposalView } from '../../src/ai/agent/agent-proposals.service';
 import { SYSTEM_PROMPTS } from '../../src/ai/prompts';
 
 let app: INestApplication | undefined;
@@ -47,6 +48,37 @@ function jsonFrames(text: string) {
   return sseFrames(text)
     .filter((f) => f !== '[DONE]')
     .map((f) => JSON.parse(f) as { type: string; data: Record<string, unknown> });
+}
+
+/** 生命周期/工具/token 事件共用 runId，seq 单调递增；done 保留既有终止协议。 */
+function expectRunEvents(frames: ReturnType<typeof jsonFrames>) {
+  const events = frames.filter((frame) => frame.type !== 'done');
+  expect(events[0].type).toBe('run_start');
+  expect(events.at(-1)!.type).toBe('run_end');
+  const runId = events[0].data.runId;
+  expect(runId).toMatch(/^[a-f0-9-]{36}$/);
+  const sequences = events.map((event) => {
+    expect(event.data.runId).toBe(runId);
+    expect(event.data.seq).toEqual(expect.any(Number));
+    return event.data.seq as number;
+  });
+  expect(sequences[0]).toBe(1);
+  expect(sequences.every((value, index) => index === 0 || value > sequences[index - 1])).toBe(true);
+  expect(events.at(-1)!.data).toMatchObject({ status: 'completed', metrics: { requestCount: expect.any(Number) } });
+}
+
+function expectProposal(proposal: ProposalView, bookId: string, tool: ProposalView['tool']) {
+  expect(Object.keys(proposal).sort()).toEqual(['id', 'bookId', 'tool', 'args', 'digest', 'expiresAt', 'status'].sort());
+  expect(proposal).toMatchObject({
+    id: expect.stringMatching(/^[a-f0-9-]{36}$/), bookId, tool,
+    digest: expect.stringMatching(/^[a-f0-9]{64}$/), status: 'pending',
+  });
+  expect(Date.parse(proposal.expiresAt)).toBeGreaterThan(Date.now());
+}
+
+async function confirmProposal(auth: Record<string, string>, proposal: ProposalView) {
+  return request(app!.getHttpServer()).post(`/api/ai/proposals/${proposal.id}/confirm`)
+    .set(auth).send({ digest: proposal.digest });
 }
 
 /** 脚本化多轮假模型：按调用次序返回预排好的 LlmResult */
@@ -228,7 +260,7 @@ describe('POST /api/ai/agent/stream（SSE）', () => {
     }),
   );
 
-  it('SSE 事件序列：step → tool_call → tool_result → token… → done → [DONE]', async () => {
+  it('SSE 事件序列：run_start → step → tool_call → tool_result → token… → run_end → done → [DONE]', async () => {
     const { auth } = await registerUser(app!, 'agent-sse@test.dev');
     const book = await createBook(auth);
     await request(app!.getHttpServer())
@@ -246,18 +278,17 @@ describe('POST /api/ai/agent/stream（SSE）', () => {
 
     const frames = jsonFrames(res.text);
     const types = frames.map((f) => f.type);
-    expect(types[0]).toBe('step');
-    expect(types[1]).toBe('tool_call');
-    expect(types[2]).toBe('tool_result');
-    expect(types.slice(3, -1).every((t) => t === 'token')).toBe(true);
-    expect(types.at(-1)).toBe('done');
+    expect(types.slice(0, 4)).toEqual(['run_start', 'step', 'tool_call', 'tool_result']);
+    expect(types.slice(4, -2)).toEqual(['token', 'token']);
+    expect(types.slice(-2)).toEqual(['run_end', 'done']);
     expect(sseFrames(res.text).at(-1)).toBe('[DONE]');
+    expectRunEvents(frames);
 
-    // 步骤内容
-    expect(frames[0].data).toEqual({ round: 1, thought: '查一下人物。' });
-    expect(frames[1].data).toMatchObject({ name: 'get_characters', args: { names: ['李四'] } });
-    expect(frames[2].data).toMatchObject({ name: 'get_characters', ok: true });
-    expect(String(frames[2].data.content)).toContain('李四');
+    // 步骤内容保留既有字段，同时验证工具调用关联和执行状态。
+    expect(frames[1].data).toMatchObject({ round: 1, thought: '查一下人物。' });
+    expect(frames[2].data).toMatchObject({ name: 'get_characters', args: { names: ['李四'] }, callId: 'c1' });
+    expect(frames[3].data).toMatchObject({ name: 'get_characters', ok: true, callId: 'c1', status: 'completed' });
+    expect(String(frames[3].data.content)).toContain('李四');
 
     // token 帧拼起来就是最终回答
     const answer = frames
@@ -289,7 +320,7 @@ describe('Agent 工具箱：get_chapter / save_inspiration / diff_edit', () => {
     expect(toolResultOf('get_chapter')).toContain('第一章正文：少年走出山门。');
   });
 
-  it('save_inspiration 真正把灵感写进数据库（tag 契约与设定库一致）', async () => {
+  it('save_inspiration 只生成提案；用户确认后保存且重复确认返回同一灵感', async () => {
     await resetApp({
       chat: scriptedChat([
         {
@@ -302,27 +333,43 @@ describe('Agent 工具箱：get_chapter / save_inspiration / diff_edit', () => {
             },
           ],
         },
-        { answer: '已记下这个灵感。' },
+        { answer: '已生成灵感提案，请检查并确认。' },
       ]),
     });
     const { auth } = await registerUser(app!, 'agent-tools-2@test.dev');
     const book = await createBook(auth);
 
-    await request(app!.getHttpServer())
+    const generated = await request(app!.getHttpServer())
       .post('/api/ai/agent')
       .set(auth)
       .send({ book_id: book.id, message: '这个设定不错，记下来' });
+    expect(generated.status).toBe(200);
+    expect(generated.body.data.proposals).toHaveLength(1);
+    const proposal = generated.body.data.proposals[0] as ProposalView;
+    expectProposal(proposal, book.id, 'save_inspiration');
+    expect(proposal.args).toEqual({ title: '剑灵设定', content: '剑里住着千年剑灵', tags: ['设定', '伏笔'] });
+    expect(toolResultOf('save_inspiration')).toContain('尚未保存');
+    const before = await request(app!.getHttpServer()).get('/api/inspirations').set(auth);
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual([]);
 
-    // 经公开 API 验证落库（tags 是 JSON 字符串契约）
+    const confirmed = await confirmProposal(auth, proposal);
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body).toMatchObject({ id: proposal.id, status: 'confirmed', result: {
+      id: expect.any(String), tool: 'save_inspiration', created: true,
+      inspiration: { title: '剑灵设定', content: '剑里住着千年剑灵', book_id: book.id },
+    } });
+    const repeated = await confirmProposal(auth, proposal);
+    expect(repeated.status).toBe(200);
+    expect(repeated.body).toEqual(confirmed.body);
+
+    // 经公开 API 验证只落一行，真实对象 id 与确认结果一致；tags 仍为 JSON 字符串。
     const list = await request(app!.getHttpServer()).get('/api/inspirations').set(auth);
     expect(list.status).toBe(200);
-    const rows = (list.body as Array<{ title: string; content: string; tags: string }>).filter(
-      (i) => i.title === '剑灵设定',
-    );
-    expect(rows.length).toBe(1);
-    expect(rows[0].content).toBe('剑里住着千年剑灵');
-    expect(JSON.parse(rows[0].tags)).toEqual(['设定', '伏笔']);
-    expect(toolResultOf('save_inspiration')).toContain('已存入灵感库');
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].id).toBe(confirmed.body.result.id);
+    expect(list.body[0].content).toBe('剑里住着千年剑灵');
+    expect(JSON.parse(list.body[0].tags)).toEqual(['设定', '伏笔']);
   });
 
   it('diff_edit 产出逐字差异报告，且不动数据库里的章节', async () => {
@@ -446,9 +493,9 @@ describe('Agent 工具箱（二）：list_chapters / get_character_relations / l
     expect(result).toContain('亦师亦父');
   });
 
-  it('save_character 入库 + 同名查重不重复创建', async () => {
+  it('save_character 多个同名提案确认时复用人物，重复确认幂等且保留首次设定', async () => {
     await resetApp({
-      // 第一轮建人物；第三轮再「建」同名人物验证查重
+      // 连续两轮分别提议保存同名人物，Agent 本身不能创建人物。
       chat: scriptedChat([
         {
           answer: '',
@@ -462,31 +509,42 @@ describe('Agent 工具箱（二）：list_chapters / get_character_relations / l
             { id: 'c2', name: 'save_character', argumentsJson: '{"name":"王五","role":"主角"}' },
           ],
         },
-        { answer: '王五已经在库里了。' },
+        { answer: '已生成两个人物提案，请检查并确认。' },
       ]),
     });
     const { auth } = await registerUser(app!, 'agent-tools2-3@test.dev');
     const book = await createBook(auth);
 
-    await request(app!.getHttpServer())
+    const generated = await request(app!.getHttpServer())
       .post('/api/ai/agent')
       .set(auth)
       .send({ book_id: book.id, message: '把反派王五存进人物库' });
+    expect(generated.status).toBe(200);
+    const proposals = generated.body.data.proposals as ProposalView[];
+    expect(proposals).toHaveLength(2);
+    expect(proposals[0].id).not.toBe(proposals[1].id);
+    proposals.forEach((proposal) => expectProposal(proposal, book.id, 'save_character'));
+    const before = await request(app!.getHttpServer()).get(`/api/books/${book.id}/characters`).set(auth);
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual([]);
+    expect(toolResultOf('save_character')).toContain('尚未保存');
 
-    // 公开 API 回读：只有一行，且保留第一次的角色/简介
-    const list = await request(app!.getHttpServer())
-      .get(`/api/books/${book.id}/characters`)
-      .set(auth);
-    const rows = (list.body as Array<{ name: string; role: string; bio: string }>).filter(
-      (c) => c.name === '王五',
-    );
-    expect(rows.length).toBe(1);
-    expect(rows[0].role).toBe('反派');
-    expect(rows[0].bio).toBe('黑市头目');
+    const first = await confirmProposal(auth, proposals[0]);
+    expect(first.status).toBe(200);
+    expect(first.body.result).toMatchObject({ tool: 'save_character', created: true, character: { role: '反派', bio: '黑市头目' } });
+    // 第二提案与第一次重试并发执行，两者都必须复用同一个真实人物 id。
+    const [second, repeated] = await Promise.all([
+      confirmProposal(auth, proposals[1]), confirmProposal(auth, proposals[0]),
+    ]);
+    expect(second.status).toBe(200);
+    expect(repeated.status).toBe(200);
+    expect(second.body.result).toMatchObject({ id: first.body.result.id, created: false, character: { role: '反派', bio: '黑市头目' } });
+    expect(repeated.body).toEqual(first.body);
 
-    const msgs = llmCalls.map((c) => c.messages).flat();
-    const dupMsg = msgs.find((m) => m.role === 'tool' && m.content.includes('已在设定库中'));
-    expect(dupMsg).toBeTruthy();
+    const list = await request(app!.getHttpServer()).get(`/api/books/${book.id}/characters`).set(auth);
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0]).toMatchObject({ id: first.body.result.id, name: '王五', role: '反派', bio: '黑市头目' });
   });
 
   it('list_inspirations 能回读之前存下的点子（含 tags）', async () => {
@@ -511,5 +569,99 @@ describe('Agent 工具箱（二）：list_chapters / get_character_relations / l
     const result = toolResultOf('list_inspirations');
     expect(result).toContain('剑灵设定');
     expect(result).toContain('[设定]');
+  });
+});
+
+const PROPOSAL_CASES: Array<{
+  tool: ProposalView['tool']; args: Record<string, unknown>; listPath: (bookId: string) => string;
+}> = [
+  { tool: 'save_character', args: { name: '沈川', role: '同伴', bio: '山中医者' }, listPath: (id) => `/api/books/${id}/characters` },
+  { tool: 'save_inspiration', args: { title: '古城', content: '古城会随月相移动', tags: ['设定'] }, listPath: () => '/api/inspirations' },
+];
+
+describe('Agent 提案完整链路：模型不能确认，用户确认才保存', () => {
+  it.each(PROPOSAL_CASES)('$tool 的 confirmed:true 无法绕过确认或授权额外写入', async ({ tool, args, listPath }) => {
+    await resetApp({ chat: scriptedChat([
+      { answer: '', toolCalls: [{ id: 'forged-confirmation', name: tool, argumentsJson: JSON.stringify({ ...args, confirmed: true }) }] },
+      { answer: '', toolCalls: [{ id: 'valid-proposal', name: tool, argumentsJson: JSON.stringify(args) }] },
+      { answer: '提案已准备好，等待用户确认。' },
+    ]) });
+    const { auth } = await registerUser(app!, `agent-forged-${tool}@test.dev`);
+    const intruder = await registerUser(app!, `agent-forged-intruder-${tool}@test.dev`);
+    const book = await createBook(auth);
+    const generated = await request(app!.getHttpServer()).post('/api/ai/agent').set(auth)
+      .send({ book_id: book.id, message: '请生成保存提案' });
+    expect(generated.status).toBe(200);
+    expect(generated.body.data.trace.map((entry: { tools: unknown[] }) => entry.tools)).toEqual([
+      [{ name: tool, ok: false }], [{ name: tool, ok: true }],
+    ]);
+    expect(generated.body.data.proposals).toHaveLength(1);
+    const proposal = generated.body.data.proposals[0] as ProposalView;
+    expectProposal(proposal, book.id, tool);
+    expect(proposal.args).toEqual(args);
+    const feedback = llmCalls.flatMap((call) => call.messages)
+      .find((message) => message.role === 'tool' && message.toolCallId === 'forged-confirmation');
+    expect(feedback?.content).toContain('工具参数无效');
+
+    const before = await request(app!.getHttpServer()).get(listPath(book.id)).set(auth);
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual([]);
+    const forged = await request(app!.getHttpServer()).post(`/api/ai/proposals/${proposal.id}/confirm`)
+      .set(auth).send({ digest: proposal.digest, confirmed: true });
+    expect(forged.status).toBe(400);
+    expect((await confirmProposal(intruder.auth, proposal)).status).toBe(404);
+    const stillEmpty = await request(app!.getHttpServer()).get(listPath(book.id)).set(auth);
+    expect(stillEmpty.body).toEqual([]);
+
+    const confirmed = await confirmProposal(auth, proposal);
+    expect(confirmed.status).toBe(200);
+    const repeated = await confirmProposal(auth, proposal);
+    expect(repeated.status).toBe(200);
+    expect(repeated.body).toEqual(confirmed.body);
+    const saved = await request(app!.getHttpServer()).get(listPath(book.id)).set(auth);
+    expect(saved.body).toHaveLength(1);
+    expect(saved.body[0].id).toBe(confirmed.body.result.id);
+  });
+
+  it.each(PROPOSAL_CASES)('$tool SSE 发送结构化 proposal，关联 callId/runId/seq，确认前不保存', async ({ tool, args, listPath }) => {
+    await resetApp({
+      chat: scriptedChat([
+        { answer: '准备保存提案。', toolCalls: [{ id: 'proposal-call', name: tool, argumentsJson: JSON.stringify(args) }] },
+        { answer: '请确认提案。' },
+      ]),
+      chatStream: async function* () { yield '提案待确认，'; yield '请检查。'; },
+    });
+    const { auth } = await registerUser(app!, `agent-proposal-sse-${tool}@test.dev`);
+    const book = await createBook(auth);
+    const response = await request(app!.getHttpServer()).post('/api/ai/agent/stream').set(auth)
+      .send({ book_id: book.id, message: '把这个设定记下来' });
+    expect(response.status).toBe(200);
+    expect(response.headers['x-accel-buffering']).toBe('no');
+    const frames = jsonFrames(response.text);
+    expect(frames.map((frame) => frame.type)).toEqual([
+      'run_start', 'step', 'tool_call', 'proposal', 'tool_result', 'token', 'token', 'run_end', 'done',
+    ]);
+    expectRunEvents(frames);
+    expect(sseFrames(response.text).at(-1)).toBe('[DONE]');
+    const event = frames[3];
+    expect(Object.keys(event.data).sort()).toEqual(['proposal', 'callId', 'runId', 'seq'].sort());
+    expect(event.data.callId).toBe('proposal-call');
+    expect(event.data.runId).toBe(frames[2].data.runId);
+    expect(event.data.seq).toBe((frames[2].data.seq as number) + 1);
+    const proposal = event.data.proposal as ProposalView;
+    expectProposal(proposal, book.id, tool);
+    expect(proposal.args).toEqual(args);
+    expect(frames[4].data).toMatchObject({ name: tool, callId: 'proposal-call', ok: true, status: 'completed' });
+    expect(String(frames[4].data.content)).toContain('尚未保存');
+    expect(frames.filter((frame) => frame.type === 'token').map((frame) => frame.data.text).join('')).toBe('提案待确认，请检查。');
+    const before = await request(app!.getHttpServer()).get(listPath(book.id)).set(auth);
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual([]);
+    const confirmed = await confirmProposal(auth, proposal);
+    expect(confirmed.status).toBe(200);
+    expect((await confirmProposal(auth, proposal)).body).toEqual(confirmed.body);
+    const saved = await request(app!.getHttpServer()).get(listPath(book.id)).set(auth);
+    expect(saved.body).toHaveLength(1);
+    expect(saved.body[0].id).toBe(confirmed.body.result.id);
   });
 });

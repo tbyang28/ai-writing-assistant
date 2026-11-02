@@ -4,6 +4,7 @@ import { and, asc, desc, eq, lt } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/drizzle.module';
 import { chapters, characters, outlines, type Book, type Chapter } from '../db/schema';
 import { RagService } from '../rag/rag.service';
+import { sourceVersion, type ContextSource } from './agent/context-sources';
 import { isUuid } from '../shared/is-uuid';
 import { codePointLength, codePointSlice } from '../shared/text';
 
@@ -15,6 +16,8 @@ export interface StoryMemoryOptions {
   outlineLimit: number;
   currentChars: number;
   includeRag: boolean;
+  signal?: AbortSignal;
+  onSources?: (sources: ContextSource[]) => void;
 }
 
 export const DEFAULT_MEMORY_OPTIONS: StoryMemoryOptions = {
@@ -56,8 +59,9 @@ export class StoryMemoryService {
     options: Partial<StoryMemoryOptions> = {},
   ): Promise<string> {
     const opts = { ...DEFAULT_MEMORY_OPTIONS, ...options };
+    opts.signal?.throwIfAborted();
 
-    const currentChapter = await this.getCurrentChapter(chapterId);
+    const currentChapter = await this.getCurrentChapter(chapterId, book.id);
     const previousChapters = await this.getRecentBookChapters(
       book.id,
       currentChapter,
@@ -78,14 +82,17 @@ export class StoryMemoryService {
       .orderBy(asc(outlines.order))
       .limit(opts.outlineLimit);
 
+    opts.signal?.throwIfAborted();
     let ragContext = '';
     if (opts.includeRag && query.trim()) {
       try {
-        ragContext = await this.rag.buildRagContext(codePointSlice(query, 0, 1000), book.id);
+        ragContext = await this.rag.buildRagContext(codePointSlice(query, 0, 1000), book.id, opts.signal, opts.onSources);
       } catch {
-        ragContext = ''; // RAG 失败不阻塞 AI 调用
+        opts.signal?.throwIfAborted();
+        ragContext = ''; // 普通检索失败可降级，取消必须传播。
       }
     }
+    opts.signal?.throwIfAborted();
 
     const parts: string[] = ['【作品记忆】', `作品名：${book.title}`];
     if (book.description) {
@@ -96,15 +103,21 @@ export class StoryMemoryService {
       const lines = characterRows.map((c) => {
         const role = c.role ? `（${c.role}）` : '';
         const bio = c.bio ? `：${codePointSlice(c.bio, 0, 120)}` : '';
-        return `- ${c.name}${role}${bio}`;
+        const text = `- ${c.name}${role}${bio}`;
+        opts.onSources?.([{ id: `character:${c.id}`, version: c.updatedAt.toISOString(), start: 0,
+          end: Math.min(codePointLength(c.bio ?? ''), 120), text }]);
+        return text;
       });
       parts.push(`【人物设定】\n${lines.join('\n')}`);
     }
 
     if (outlineRows.length > 0) {
-      const lines = outlineRows.map((o) =>
-        o.content ? `- ${o.title}：${codePointSlice(o.content, 0, 180)}` : `- ${o.title}`,
-      );
+      const lines = outlineRows.map((o) => {
+        const text = o.content ? `- ${o.title}：${codePointSlice(o.content, 0, 180)}` : `- ${o.title}`;
+        opts.onSources?.([{ id: `outline:${o.id}`, version: o.updatedAt.toISOString(), start: 0,
+          end: Math.min(codePointLength(o.content ?? ''), 180), text }]);
+        return text;
+      });
       parts.push(`【大纲/设定】\n${lines.join('\n')}`);
     }
 
@@ -119,7 +132,10 @@ export class StoryMemoryService {
           codePointLength(text) > opts.previousChapterChars
             ? codePointSlice(text, -opts.previousChapterChars)
             : text;
-        historyParts.push(`【${chapter.title}】\n${tail}`);
+        const rendered = `【${chapter.title}】\n${tail}`;
+        opts.onSources?.([{ id: `chapter:${chapter.id}`, version: sourceVersion(text),
+          start: Math.max(0, codePointLength(text) - opts.previousChapterChars), end: codePointLength(text), text: rendered }]);
+        historyParts.push(rendered);
       }
       if (historyParts.length > 0) {
         parts.push(`【最近前文章节】\n${historyParts.join('\n\n')}`);
@@ -141,15 +157,15 @@ export class StoryMemoryService {
     return parts.join('\n\n');
   }
 
-  /** Python 的 _get_current_chapter：只按 id 取，不校验归属（保持一致） */
-  private async getCurrentChapter(chapterId: string | null): Promise<Chapter | null> {
+  /** 章节定位也约束在已授权作品内，不能用别书的章节序号改变前文范围。 */
+  private async getCurrentChapter(chapterId: string | null, bookId: string): Promise<Chapter | null> {
     if (!chapterId || !isUuid(chapterId)) {
       return null;
     }
     const rows = await this.db
       .select()
       .from(chapters)
-      .where(eq(chapters.id, chapterId))
+      .where(and(eq(chapters.id, chapterId), eq(chapters.bookId, bookId)))
       .limit(1);
     return rows[0] ?? null;
   }

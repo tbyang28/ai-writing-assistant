@@ -18,7 +18,7 @@ export interface AgentRunOptions {
   emit?: (event: AgentEvent) => void | Promise<void>;
 }
 
-/** 显式写作 Agent 入口：与普通写作共用执行器，额外开放设定库写入与差异审阅工具。 */
+/** 显式写作 Agent 入口：与普通写作共用执行器，额外开放设定库保存提案与差异审阅工具。 */
 @Injectable()
 export class AgentService {
   constructor(private readonly runtime: AgentRuntimeService) {}
@@ -36,7 +36,7 @@ export class AgentService {
     return this.runtime.run({
       ...options,
       messages,
-      allowWrites: true,
+      capabilities: ['read', 'review', 'propose_inspiration', 'propose_character'],
     });
   }
 }

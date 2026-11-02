@@ -35,11 +35,13 @@
 - polish-diff 用更紧的上下文预算变体（不含 RAG）
 
 ### 🤖 写作 Agent（工具调用循环）
-- `src/ai/agent/`：AgentRuntimeService（统一循环）+ AgentService（显式 Agent 入口）+ StoryToolsService（11 个工具按权限分层：读 8 个 search_story / get_characters / get_outline / get_recent_chapters / get_chapter / list_chapters / get_character_relations / list_inspirations；写 2 个 save_inspiration / save_character（按名查重）；审阅 1 个 diff_edit 不落库。章节正文无写工具——agent 只有提案权）
-- 初始上下文只带作品名/简介，人物/大纲/前文由模型按需调工具取（区别于 story-memory 的预拼装）
-- `AgentRuntimeService` 是所有生成端点的统一执行器：非流式工具决策 + function calling + 最终生成；普通聊天/写作/润色/大纲仅允许只读工具，人物抽取跳过工具决策。最多 4 轮、每轮最多执行 3 个工具；逐个校验参数和权限，每个 tool_call 都回灌对应结果
-- SSE 在工具决策结束后转发真实最终生成流，支持等待背压及取消传播；不再对非流式全文分块回放。现有作品记忆保留为初始背景，按需工具补充上下文
-- 工具异常/未知工具/坏 JSON 参数统一转为 ok:false 文本喂回模型，不中断循环
+- `src/ai/agent/`：统一执行器 + 11 个工具（8 个读取、2 个保存提案、1 个 diff_edit 审阅）。普通生成只读；显式 Agent 按 read/review/propose_character/propose_inspiration 能力开放。章节正文无写工具。
+- 显式 Agent 初始上下文只有书名/简介；普通续写保留 StoryMemory 预装。模型按需查询人物/大纲/前文/RAG，同来源同版本且范围已覆盖时去重。
+- SiliconFlow 每轮统一流式接收文本、工具增量和终态；无工具只请求一次。工具轮暂存文字到完成，避免过程稿污染正文；旧适配器保留兼容路径。length/error/aborted 不执行工具，截断润色不返回可应用结果。
+- 最多 4 轮、每轮最多执行 3 个工具。独立读取默认并发 2 个（上限 3），其他工具为串行屏障，结果按原序回灌。取消传播到工具/RAG/embedding HTTP，停止排队且等待在途任务结束。
+- 完整消息与工具 schema 统一预算：默认 32768 窗口、4096 输出、1024 余量，保守 UTF-8 字节估算；整轮移除旧历史并保护 system、当前任务、工具配对；无法容纳则中文报错，不自动摘要。日志保留请求/尝试/耗时/可选 usage（完整/部分/未知），不默认记录正文。
+- save_character/save_inspiration 仅创建 20 分钟有效的 agent_proposals；编辑器「AI 助手 → Agent」展示参数，用户确认接口才事务写入。摘要绑定用户/作品/参数/有效期，JWT 与归属重检、行锁防重复确认，同名人物复用。
+- Agent SSE 增加 run_start/run_end、runId/seq、callId、proposal；普通写作仍为 token→done→[DONE]，支持背压。工具异常/未知工具/坏参数回灌 ok:false，取消单独传播；取消不会撤销已提交操作。
 
 ### 🔐 用户认证
 - JWT Token 认证（HS256，payload `{sub, exp}`）
@@ -64,7 +66,7 @@
 | AI 模型 | DeepSeek-V3.2 / GLM-4 / MiniMax（SiliconFlow） | - |
 | 向量模型 | BAAI/bge-large-zh-v1.5 | - |
 | 部署 | Docker + Docker Compose | - |
-| 测试 | Vitest + supertest（**174 个用例**） | ^3.2 |
+| 测试 | Vitest + supertest（**354 个用例**） | ^3.2 |
 
 > 旧版 Python 技术栈（已删除）：FastAPI + SQLAlchemy + SQLite。
 
@@ -130,7 +132,7 @@ ai-writing-assistant/
 │   │   │   │                   #   text-diff、extraction、llm/（undici SiliconFlow 客户端）
 │   │   ├── rag/                # RAG：切块/余弦/pgvector 索引与检索
 │   │   └── shared/             # chinese-number、text（码点级 wordCount/切片）
-│   ├── test/                   # 174 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
+│   ├── test/                   # 354 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
 │   ├── tools/import-sqlite.ts  # 旧 SQLite 数据 → PostgreSQL 一次性迁移
 │   ├── drizzle.config.ts / Dockerfile / vitest.config.ts
 ├── backend/                    #（已删除；旧 Python 实现见 git 历史）
@@ -198,7 +200,9 @@ ai-writing-assistant/
 | POST | `/api/ai/extract-characters` | 人物抽取（坏 JSON → 502） |
 | POST | `/api/ai/outline` | 生成大纲 |
 | POST | `/api/ai/agent` | 写作 Agent（工具调用循环，非流式） |
-| POST | `/api/ai/agent/stream` | 写作 Agent（流式，step→tool_call→tool_result→token→done→[DONE]） |
+| POST | `/api/ai/agent/stream` | 写作 Agent（run_start→step/tool_call/proposal/tool_result/token→run_end→done→[DONE]） |
+| POST | `/api/ai/proposals/{id}/confirm` | 用户确认保存提案（body: digest，重复确认幂等） |
+| POST | `/api/ai/proposals/{id}/cancel` | 用户取消待确认提案（body: digest） |
 
 **SSE 协议**：`data: {"type":"token","data":{"text":...}}` → `done` → 字面量 `data: [DONE]`；错误以 in-band `{"type":"error"}` 传递（HTTP 仍 200）；响应头含 `X-Accel-Buffering: no`。
 
@@ -209,7 +213,7 @@ ai-writing-assistant/
 ```bash
 cd backend-ts
 docker compose up -d postgres-test   # 测试库（localhost:5434）
-npm test                             # Vitest：17 个文件 / 174 个用例
+npm test                             # Vitest：24 个文件 / 354 个用例
 npx tsc --noEmit                     # 类型检查
 ```
 
@@ -286,7 +290,7 @@ RUN_MIGRATIONS=true                 # 启动时自动跑迁移（compose/render 
 | **跨后端兼容** | 同 SECRET_KEY 下新旧 token 互认；Python $2b$ 哈希在 TS 侧可直接验证 |
 | **安全修复** | 补 3 处越权写洞（outline/character/inspiration 创建）；FK 真级联（删章不再孤儿化向量块） |
 | **性能修复** | stats 由 N+1 重写为 2-3 条聚合查询；nginx 剥前缀 bug 修复 |
-| **单元测试** | 174 个用例（Python 版 111 → 净增 63，覆盖越权/级联/解析器/契约对齐/SSE 取消） |
+| **测试** | 后端 354 个、前端 30 个；覆盖越权/级联/SSE/预算/并发/取消/提案事务和交互 |
 
 ---
 

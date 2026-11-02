@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { SiliconFlowClient } from '../../src/ai/llm/silicon-flow.client';
-import { LlmHttpError } from '../../src/ai/llm/llm-client.interface';
+import { LlmHttpError, getLlmFailureAttempts } from '../../src/ai/llm/llm-client.interface';
 
 /**
  * 真 socket 解析器测试 —— 起一个 node:http 假 SiliconFlow 服务，
@@ -191,6 +191,98 @@ describe('SiliconFlowClient（真 socket）', () => {
       input: ['文本一', '文本二'],
     });
     await client.onModuleDestroy();
+  });
+
+  it('保留 finish_reason 与已知 usage，未知字段不会填零', async () => {
+    handler = (_req, res) => res.end(JSON.stringify({ choices: [{ finish_reason: 'length',
+      message: { content: '截断', tool_calls: [{ id: 'c1', function: { name: 'save_character', arguments: '{"name":"张三"}' } }] } }],
+      usage: { prompt_tokens: 12, completion_tokens: 8 } }));
+    const client = makeClient();
+    const result = await client.chat({ messages: [] });
+    expect(result).toMatchObject({ finishReason: 'length', rawFinishReason: 'length',
+      usage: { inputTokens: 12, outputTokens: 8 } });
+    expect(result.usage?.cachedInputTokens).toBeUndefined();
+    expect(result.attempts).toHaveLength(1);
+    await client.onModuleDestroy();
+  });
+
+  it('统一流组装交错工具参数，读取结束后的 usage，处理无换行 DONE', async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      for (const frame of [
+        { choices: [{ delta: { tool_calls: [{ index: 1, id: 'b', function: { name: 'get_outline', arguments: '{' } },
+          { index: 0, id: 'a', function: { name: 'get_characters', arguments: '{"names":[' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"张三"]}' } },
+          { index: 1, function: { arguments: '}' } }] }, finish_reason: 'tool_calls' }] },
+        { choices: [], usage: { prompt_tokens: 20, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 3 } } },
+      ]) res.write(`data: ${JSON.stringify(frame)}\r\n\r\n`);
+      res.end('data: [DONE]');
+    };
+    const client = makeClient();
+    const events = [];
+    for await (const event of client.streamEvents({ messages: [] })) events.push(event);
+    const done = events.at(-1)!;
+    expect(done.type).toBe('done');
+    if (done.type === 'done') {
+      expect(done.result).toMatchObject({ finishReason: 'tool_calls', usage: { inputTokens: 20, outputTokens: 10, cachedInputTokens: 3 } });
+      expect(done.result.toolCalls).toEqual([
+        { id: 'a', name: 'get_characters', argumentsJson: '{"names":["张三"]}' },
+        { id: 'b', name: 'get_outline', argumentsJson: '{}' },
+      ]);
+    }
+    await client.onModuleDestroy();
+  });
+
+  it('缺少终态的断流抛错，不把半段文本标记完成', async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end('data: {"choices":[{"delta":{"content":"半段"}}]}\n\n');
+    };
+    const client = makeClient();
+    await expect((async () => { for await (const _ of client.streamEvents({ messages: [] })) { /* consume */ } })())
+      .rejects.toThrow('未正常完成');
+    await client.onModuleDestroy();
+  });
+
+  it('取消正在进行的 embedding HTTP，不发起重试', async () => {
+    const controller = new AbortController();
+    let requests = 0;
+    handler = (_req, _res) => { requests++; controller.abort(); };
+    const client = makeClient();
+    await expect(client.embed(['取消检索'], controller.signal)).rejects.toThrow();
+    expect(requests).toBe(1);
+    await client.onModuleDestroy();
+  });
+
+  it('全部网络重试失败仍保留三次尝试，usage 保持未知', async () => {
+    let count = 0;
+    handler = (_req, res) => { count++; res.destroy(); };
+    const client = makeClient();
+    try {
+      const error = await client.chat({ messages: [] }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(count).toBe(3);
+      expect(getLlmFailureAttempts(error)).toHaveLength(3);
+      expect(getLlmFailureAttempts(error)?.every((a) => a.status === 'failed' && a.usage === undefined)).toBe(true);
+    } finally { await client.onModuleDestroy(); }
+  });
+
+  it.each([false, true])('带工具但缺少可信结束原因时拒绝响应，stream=%s', async (stream) => {
+    handler = (_req, res) => {
+      if (stream) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.end('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"get_outline","arguments":"{}"}}]}}]}\n\ndata: [DONE]\n\n');
+      } else {
+        res.end(JSON.stringify({ choices: [{ message: { content: '', tool_calls: [
+          { id: 'a', function: { name: 'get_outline', arguments: '{}' } },
+        ] } }] }));
+      }
+    };
+    const client = makeClient();
+    try {
+      const consume = async () => { for await (const _ of client.streamEvents({ messages: [] })) { /* consume */ } };
+      await expect(stream ? consume() : client.chat({ messages: [] })).rejects.toThrow('未正常完成');
+    } finally { await client.onModuleDestroy(); }
   });
 
   it('未配置 API Key → 抛中文提示，不发请求', async () => {

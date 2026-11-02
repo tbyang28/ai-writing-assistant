@@ -23,7 +23,8 @@ import {
 export interface FakeLlmOverrides {
   chat?: (options: LlmCallOptions) => Promise<LlmResult>;
   chatStream?: (options: LlmCallOptions) => AsyncIterable<string>;
-  embed?: (texts: string[]) => Promise<number[][]>;
+  embed?: LlmClient['embed'];
+  streamEvents?: LlmClient['streamEvents'];
 }
 
 /**
@@ -63,7 +64,11 @@ export async function buildTestApp(llm: FakeLlmOverrides = {}): Promise<INestApp
       record(options);
       return fake.chatStream(options);
     },
-    embed: (texts) => fake.embed(texts),
+    embed: (texts, signal) => fake.embed(texts, signal),
+    ...(llm.streamEvents ? { streamEvents: (options: LlmCallOptions) => {
+      record(options);
+      return llm.streamEvents!(options);
+    } } : {}),
   };
 
   const moduleRef = await Test.createTestingModule({
