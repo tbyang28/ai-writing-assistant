@@ -19,6 +19,7 @@ export const aiWriteSchema = z.object({
   book_id: z.string().min(1),
   content: z.string(),
   command: z.string(), // continue | improve | fix | summarize | 其他
+  instruction: z.string().max(3000).nullish(), // optional author constraints for continuation / fair scene evaluation
   chapter_id: z.string().nullish(),
   selected_text: z.string().nullish(),
   model: modelField,

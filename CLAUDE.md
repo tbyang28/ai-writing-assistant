@@ -43,6 +43,13 @@
 - save_character/save_inspiration 仅创建 20 分钟有效的 agent_proposals；编辑器「AI 助手 → Agent」展示参数，用户确认接口才事务写入。摘要绑定用户/作品/参数/有效期，JWT 与归属重检、行锁防重复确认，同名人物复用。
 - Agent SSE 增加 run_start/run_end、runId/seq、callId、proposal；普通写作仍为 token→done→[DONE]，支持背压。工具异常/未知工具/坏参数回灌 ok:false，取消单独传播；取消不会撤销已提交操作。
 
+### 🎬 场景目标续写
+- 编辑器「AI 助手 → 写作」：意图 → 可编辑目标（情节推进/禁止揭露/视角/终点/字数）→ 生成与证据审阅 → 可选一轮局部修订 → 作者预览应用。
+- `src/ai/scene/` 每阶段单次调用统一执行器，无工具/无正文写库；云端和本机同路由。最多 8 条意见，唯一精确引用 + 约束 ID 校验；修订最多 3 片段、原范围合计 1200 UTF-16 单位，其他正文原样保留。
+- 章节与作品归属双校验，SSE 断开/停止取消全部后续阶段，整体 240 秒上限。初稿/审阅失败无可应用结果，修订失败保留已审阅初稿；修订后未自动复审，不宣称已解决。
+- 资料按意图/草稿末尾筛选；作者人物设定、叙事/检索片段和大纲计划区分处理，不自动生成已确认事实。旧草稿/目标变化后禁止直接写回。
+- API、边界与合成比较案例见 `docs/scene-writing.md`；`backend-ts/tools/evaluate-scenes.mjs --dry-run` 可无网络检查评测配置，真实模型质量尚未测量。
+
 ### 💻 本机模型连接
 - 导航「模型连接」（`/settings/models`）通过一次性配对绑定用户主动启动的 Node 20+ 连接器，明确启用后在编辑器选择 Ollama / LM Studio 模型。
 - `local-connector/` 仅出站轮询，不开本机端口；只访问固定 loopback 11434/1234，不跟随重定向。CLI 仅检查 PATH 存在，不执行、不读取登录/密钥。
@@ -74,7 +81,7 @@
 | AI 模型 | DeepSeek-V3.2 / GLM-4 / MiniMax（SiliconFlow） | - |
 | 向量模型 | BAAI/bge-large-zh-v1.5 | - |
 | 部署 | Docker + Docker Compose | - |
-| 测试 | Vitest + supertest（**440 个用例**） | ^3.2 |
+| 测试 | Vitest + supertest（**566 个用例**） | ^3.2 |
 
 > 旧版 Python 技术栈（已删除）：FastAPI + SQLAlchemy + SQLite。
 
@@ -140,7 +147,7 @@ ai-writing-assistant/
 │   │   │   │                   #   text-diff、extraction、llm/（undici SiliconFlow 客户端）
 │   │   ├── rag/                # RAG：切块/余弦/pgvector 索引与检索
 │   │   └── shared/             # chinese-number、text（码点级 wordCount/切片）
-│   ├── test/                   # 440 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
+│   ├── test/                   # 566 个 Vitest 用例（单测 + supertest e2e + 真 socket SSE 解析）
 │   ├── tools/import-sqlite.ts  # 旧 SQLite 数据 → PostgreSQL 一次性迁移
 │   ├── drizzle.config.ts / Dockerfile / vitest.config.ts
 ├── backend/                    #（已删除；旧 Python 实现见 git 历史）
@@ -221,7 +228,7 @@ ai-writing-assistant/
 ```bash
 cd backend-ts
 docker compose up -d postgres-test   # 测试库（localhost:5434）
-npm test                             # Vitest：27 个文件 / 440 个用例
+npm test                             # Vitest：30 个文件 / 566 个用例
 npx tsc --noEmit                     # 类型检查
 ```
 
@@ -298,7 +305,7 @@ RUN_MIGRATIONS=true                 # 启动时自动跑迁移（compose/render 
 | **跨后端兼容** | 同 SECRET_KEY 下新旧 token 互认；Python $2b$ 哈希在 TS 侧可直接验证 |
 | **安全修复** | 补 3 处越权写洞（outline/character/inspiration 创建）；FK 真级联（删章不再孤儿化向量块） |
 | **性能修复** | stats 由 N+1 重写为 2-3 条聚合查询；nginx 剥前缀 bug 修复 |
-| **测试** | 后端 440 个、前端 43 个，连接器 33 个实际测试；覆盖越权/级联/SSE/预算/并发/取消/提案事务/本机配对、令牌隔离、队列限额和交互 |
+| **测试** | 后端 566 个、前端 104 个，连接器 33 个实际测试；覆盖越权/级联/SSE/预算/并发/取消/提案事务/本机配对、令牌隔离、队列限额和交互 |
 
 ---
 

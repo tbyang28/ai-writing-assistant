@@ -1,5 +1,6 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 
 import { AppModule } from '../../src/app.module';
@@ -78,7 +79,7 @@ export async function buildTestApp(llm: FakeLlmOverrides = {}): Promise<INestApp
     .useValue(recording)
     .compile();
 
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication<NestExpressApplication>();
   app.setGlobalPrefix('api', { exclude: ['/', 'health', 'api/health'] });
   app.useBodyParser('json', { limit: '20mb' });
   app.useGlobalFilters(new AllExceptionsFilter());

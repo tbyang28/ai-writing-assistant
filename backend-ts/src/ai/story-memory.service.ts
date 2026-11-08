@@ -16,6 +16,8 @@ export interface StoryMemoryOptions {
   outlineLimit: number;
   currentChars: number;
   includeRag: boolean;
+  /** Scene tasks rank a bounded candidate set against intent + draft tail. Ordinary memory is unchanged. */
+  focusQuery?: string;
   signal?: AbortSignal;
   onSources?: (sources: ContextSource[]) => void;
 }
@@ -68,19 +70,25 @@ export class StoryMemoryService {
       opts.previousChapterLimit,
     );
 
-    const characterRows = await this.db
+    let characterRows = await this.db
       .select()
       .from(characters)
       .where(eq(characters.bookId, book.id))
       .orderBy(asc(characters.createdAt), asc(characters.id))
-      .limit(opts.characterLimit);
+      .limit(opts.focusQuery ? 120 : opts.characterLimit);
+    if (opts.focusQuery) {
+      characterRows = characterRows.filter(c => opts.focusQuery!.includes(c.name)).slice(0, opts.characterLimit);
+    }
 
-    const outlineRows = await this.db
+    let outlineRows = await this.db
       .select()
       .from(outlines)
       .where(eq(outlines.bookId, book.id))
       .orderBy(asc(outlines.order))
-      .limit(opts.outlineLimit);
+      .limit(opts.focusQuery ? 80 : opts.outlineLimit);
+    if (opts.focusQuery) {
+      outlineRows = rankSceneOutlines(outlineRows, opts.focusQuery).slice(0, opts.outlineLimit);
+    }
 
     opts.signal?.throwIfAborted();
     let ragContext = '';
@@ -191,4 +199,18 @@ export class StoryMemoryService {
       .limit(limit);
     return rows.reverse();
   }
+}
+
+/** Small deterministic lexical ranker; retrieval evidence is still a source, never inferred canon. */
+export function rankSceneOutlines<T extends { title: string; content: string }>(rows: T[], query: string): T[] {
+  const lower = query.toLowerCase();
+  const terms = new Set(lower.match(/[a-z0-9]{2,}/gu) ?? []);
+  for (const run of lower.match(/[\p{Script=Han}]{2,}/gu) ?? []) {
+    const points = Array.from(run);
+    for (let i = 0; i + 1 < points.length; i++) terms.add(points[i] + points[i + 1]);
+  }
+  return rows.map((row, order) => ({ row, order, score: [...terms].reduce((score, term) =>
+    score + (row.title.toLowerCase().includes(term) ? 3 : row.content.toLowerCase().includes(term) ? 1 : 0), 0) }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.order - b.order).map(item => item.row);
 }

@@ -18,7 +18,9 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../core/current-user.decorator';
 import { ZodValidationPipe } from '../core/zod-validation.pipe';
 import { DRIZZLE, type Database } from '../db/drizzle.module';
-import { books, type Book, type User } from '../db/schema';
+import { books, chapters, type Book, type User } from '../db/schema';
+import { SceneWritingService } from './scene/scene-writing.service';
+import { scenePlanRequestSchema, sceneWriteRequestSchema, type ScenePlanInput, type SceneWriteInput } from './scene/scene-contract';
 import { codePointLength, codePointSlice } from '../shared/text';
 import { isUuid } from '../shared/is-uuid';
 import { parseCharacterExtraction } from './extraction';
@@ -63,7 +65,61 @@ export class AiController {
     private readonly runtime: AgentRuntimeService,
     private readonly memory: StoryMemoryService,
     private readonly agent: AgentService,
+    private readonly scene: SceneWritingService,
   ) {}
+
+  @Post('scene/plan/stream')
+  async scenePlan(
+    @Body(new ZodValidationPipe(scenePlanRequestSchema)) data: ScenePlanInput,
+    @CurrentUser() user: User, @Res() res: Response,
+  ) {
+    await this.pipeScene('plan', data, user, res);
+  }
+
+  @Post('scene/stream')
+  async sceneWrite(
+    @Body(new ZodValidationPipe(sceneWriteRequestSchema)) data: SceneWriteInput,
+    @CurrentUser() user: User, @Res() res: Response,
+  ) {
+    await this.pipeScene('write', data, user, res);
+  }
+
+  private async pipeScene(mode: 'plan' | 'write', data: ScenePlanInput | SceneWriteInput, user: User, res: Response) {
+    const book = await this.verifyBookAccess(data.book_id, user.id);
+    if (data.chapter_id) {
+      if (!isUuid(data.chapter_id)) throw new NotFoundException('章节不存在');
+      const chapter = await this.db.select({ id: chapters.id }).from(chapters)
+        .where(and(eq(chapters.id, data.chapter_id), eq(chapters.bookId, book.id))).limit(1);
+      if (!chapter.length) throw new NotFoundException('章节不存在');
+    }
+    const abort = this.startSse(res);
+    const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(240000)]);
+    // Keep intermediaries alive during structured planning/review without sending process prose.
+    const heartbeat = setInterval(() => {
+      if (!res.destroyed && !res.writableEnded) res.write(': scene heartbeat\n\n');
+    }, 15000);
+    const frame = async (type: string, payload: unknown) => {
+      signal.throwIfAborted();
+      if (res.destroyed || res.writableEnded) return;
+      if (!res.write(`data: ${JSON.stringify({ type, data: payload })}\n\n`)) {
+        await Promise.race([once(res, 'drain'), once(res, 'close')]);
+      }
+      signal.throwIfAborted();
+    };
+    try {
+      const result = mode === 'plan'
+        ? await this.scene.plan(book, data, signal, frame)
+        : await this.scene.write(book, data as SceneWriteInput, signal, frame);
+      await frame('result', result);
+      this.finishSse(res);
+    } catch (error) {
+      this.writeErrorSafely(res, abort, signal.aborted && !abort.signal.aborted
+        ? new Error('场景任务超时，请缩小目标后重试') : error);
+    } finally {
+      clearInterval(heartbeat);
+      res.end();
+    }
+  }
 
   // ===================== 非流式 =====================
 
@@ -400,7 +456,8 @@ export class AiController {
         data.content,
         { signal, onSources: (sources) => initialSources.push(...sources) },
       );
-      return buildContinuePrompt(content, storyMemory);
+      return buildContinuePrompt(content, storyMemory) + (data.instruction?.trim()
+        ? `\n\n【本次作者要求】\n${data.instruction.trim()}` : '');
     }
     if (command === 'improve') {
       return `请润色以下文本：\n\n${codePointSlice(content, 0, 3000)}`;

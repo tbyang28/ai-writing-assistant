@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
 import { useAgentStore } from '@/stores/agent'
 import AgentPanel from './AgentPanel.vue'
+import ScenePanel from './ScenePanel.vue'
 import { useLocalProviderCatalog } from '@/composables/useLocalProviderCatalog'
 import type { AiChangeProposal } from '@/utils/aiChange'
 
@@ -53,7 +54,8 @@ const hasSelection = computed(() => Boolean(props.selectedText) && (props.select
 const targetLabel = computed(() => hasSelection.value ? '选中文本' : '整章正文')
 const targetLength = computed(() => hasSelection.value ? props.selectedText?.length || 0 : chapterContent.value.length)
 const targetPreview = computed(() => hasSelection.value ? props.selectedText || '' : chapterContent.value.slice(0, 72))
-const isBusy = computed(() => aiStore.isLoading || isDiffLoading.value || agentStore.isLoading)
+const sceneBusy = ref(false)
+const isBusy = computed(() => aiStore.isLoading || isDiffLoading.value || agentStore.isLoading || sceneBusy.value)
 const writeResultStale = computed(() => Boolean(writeResult.value && (writeResult.value.chapterId !== props.chapterId || writeResult.value.original !== chapterContent.value)))
 const diffResultStale = computed(() => Boolean(diffContext.value && (diffContext.value.chapterId !== props.chapterId || diffContext.value.original !== chapterContent.value)))
 const diffTargetReady = computed(() => Boolean(hasSelection.value || chapterContent.value.trim()))
@@ -90,7 +92,11 @@ function writeRange(command: WriteCommand) {
   return { start: 0, end: chapterContent.value.length }
 }
 function scrollMessagesToEnd() {
-  nextTick(() => { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight })
+  const version = contextVersion
+  const mode = panelMode.value
+  nextTick(() => {
+    if (version === contextVersion && mode === panelMode.value && messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+  })
 }
 function resetChapterContext() {
   contextVersion += 1
@@ -101,10 +107,16 @@ function resetChapterContext() {
   showDiffControls.value = false
   streamingDiffText.value = ''
   inputText.value = ''
+  nextTick(() => { if (panelMode.value === 'write' && messagesRef.value) messagesRef.value.scrollTop = 0 })
 }
 onMounted(resetChapterContext)
 watch(() => [props.bookId, props.chapterId], resetChapterContext)
-watch(() => [aiStore.chatMessages.length, aiStore.isLoading, writeResult.value?.text, streamingDiffText.value], scrollMessagesToEnd)
+watch(() => [aiStore.chatMessages.length, aiStore.isLoading], () => {
+  if (panelMode.value === 'chat') scrollMessagesToEnd()
+})
+watch(() => [writeResult.value?.text, streamingDiffText.value], () => {
+  if (panelMode.value === 'write' && (writeResult.value || streamingDiffText.value)) scrollMessagesToEnd()
+})
 
 async function runCommand(command: WriteCommand) {
   if (isBusy.value || modelUnavailable.value || !props.chapterId || (!chapterContent.value && command !== 'continue')) return
@@ -188,22 +200,20 @@ async function handleKeydown(event: KeyboardEvent) {
 
 <template>
   <div class="ai-panel-shell flex flex-col h-full overflow-hidden shrink-0 border-l w-full max-w-[100vw] animate-slide-in-right" :style="{ backgroundColor: 'var(--surface)', borderLeftColor: 'var(--border-clr)' }">
-    <div class="flex items-center justify-between gap-3 px-4 py-3 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
+    <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 border-b" :style="{ borderBottomColor: 'var(--border-clr)' }">
       <div class="flex items-center gap-2 min-w-0">
         <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand text-white" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3m0 12v3M5.6 5.6l2.2 2.2m8.4 8.4 2.2 2.2M3 12h3m12 0h3M5.6 18.4l2.2-2.2m8.4-8.4 2.2-2.2"/></svg></div>
-        <div class="min-w-0"><div class="font-serif font-semibold text-sm truncate" :style="{ color: 'var(--text-primary)' }">AI 助手</div><div class="text-[11px]" :style="{ color: 'var(--text-muted)' }">写作审阅 · 问答 · Agent 协作</div></div>
+        <div class="min-w-0"><div class="font-serif font-semibold text-sm" :style="{ color: 'var(--text-primary)' }">AI 助手</div><div class="text-[11px] leading-5" :style="{ color: 'var(--text-muted)' }">写作审阅 · 问答 · Agent 协作</div></div>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <select v-model="aiStore.selectedModel" aria-label="选择 AI 模型" class="model-select text-[11px] border rounded-lg px-2 py-1 max-w-[150px] truncate cursor-pointer" :style="{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
-          <option :value="null">默认模型</option>
-          <optgroup label="云端模型"><option v-for="option in MODEL_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option></optgroup>
-          <optgroup v-if="localCatalog.modelOptions.length || missingLocalModel" label="本地模型">
-            <option v-if="missingLocalModel" :value="aiStore.selectedModel" disabled>当前本地模型（不可用）</option>
-            <option v-for="option in localCatalog.modelOptions" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label }}{{ option.reason ? ' · ' + option.reason : '' }}</option>
-          </optgroup>
-        </select>
-        <button type="button" @click="aiStore.closePanel()" class="shrink-0 rounded-lg p-2 transition-colors duration-150 hover:bg-[var(--surface-hover)]" :style="{ color: 'var(--text-muted)' }" aria-label="关闭 AI 助手"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-      </div>
+      <button type="button" @click="aiStore.closePanel()" class="flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 transition-colors duration-150 hover:bg-[var(--surface-hover)]" :style="{ color: 'var(--text-muted)' }" aria-label="关闭 AI 助手"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      <select v-model="aiStore.selectedModel" aria-label="选择 AI 模型" class="model-select col-span-2 w-full min-w-0 text-xs border rounded-lg px-2 py-1 truncate cursor-pointer" :style="{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
+        <option :value="null">默认模型</option>
+        <optgroup label="云端模型"><option v-for="option in MODEL_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option></optgroup>
+        <optgroup v-if="localCatalog.modelOptions.length || missingLocalModel" label="本地模型">
+          <option v-if="missingLocalModel" :value="aiStore.selectedModel" disabled>当前本地模型（不可用）</option>
+          <option v-for="option in localCatalog.modelOptions" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label }}{{ option.reason ? ' · ' + option.reason : '' }}</option>
+        </optgroup>
+      </select>
     </div>
     <div class="px-4 py-2 text-xs leading-5 border-b" :style="{ borderColor: 'var(--border-clr)', color: 'var(--text-secondary)' }">
       <router-link to="/settings/models" class="underline underline-offset-4 inline-flex min-h-11 items-center">管理模型连接</router-link>
@@ -221,6 +231,7 @@ async function handleKeydown(event: KeyboardEvent) {
 
     <div v-if="panelMode !== 'agent'" ref="messagesRef" class="flex-1 overflow-y-auto min-h-0 p-4 space-y-3.5">
       <template v-if="panelMode === 'write'">
+        <ScenePanel :book-id="props.bookId" :chapter-id="props.chapterId" :chapter-content="chapterContent" :model="aiStore.selectedModel" :blocked="aiStore.isLoading || isDiffLoading || agentStore.isLoading" :model-unavailable="modelUnavailable" @busy="sceneBusy = $event" @apply-change="emit('applyChange', $event)" />
         <div class="rounded-xl border px-3 py-2.5" :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"><div class="flex items-center justify-between gap-2"><div class="text-[11px] font-semibold uppercase tracking-wide" :style="{ color: 'var(--text-muted)' }">当前写作范围</div><span class="text-[11px] font-medium" :style="{ color: 'var(--brand-hover)' }">{{ targetLabel }} · {{ targetLength }} 字</span></div><div v-if="targetPreview" class="mt-1.5 text-xs leading-5 line-clamp-2" :style="{ color: 'var(--text-secondary)' }">{{ targetPreview }}{{ targetPreview.length >= 72 ? '…' : '' }}</div><div v-else class="mt-1.5 text-xs" :style="{ color: 'var(--text-muted)' }">先在编辑器输入正文，AI 才能基于上下文工作。</div></div>
         <div><div class="flex items-center justify-between mb-2"><div class="text-[11px] font-semibold uppercase tracking-wide" :style="{ color: 'var(--text-muted)' }">写作工具</div><span v-if="isBusy" class="inline-flex items-center gap-1 text-[11px]" :style="{ color: 'var(--brand-hover)' }"><span class="w-1.5 h-1.5 rounded-full bg-brand animate-pulse"></span>处理中</span></div><div class="grid grid-cols-2 gap-2"><button type="button" @click="runCommand('continue')" :disabled="isBusy || modelUnavailable || !props.chapterId" class="ai-action ai-action-primary">续写<span>接在章末</span></button><button type="button" @click="openDiffReview" :disabled="isBusy || modelUnavailable || !diffTargetReady" class="ai-action">润色<span>审阅后写回</span></button><button type="button" @click="runCommand('fix')" :disabled="isBusy || modelUnavailable || !chapterContent" class="ai-action">校对<span>错字与语病</span></button><button type="button" @click="runCommand('summarize')" :disabled="isBusy || modelUnavailable || !chapterContent" class="ai-action">摘要<span>提炼当前范围</span></button></div></div>
         <div v-if="showDiffControls" class="rounded-xl border p-3.5 space-y-2.5" :style="{ borderColor: 'var(--border-clr)', backgroundColor: 'var(--surface-secondary)' }"><div class="flex items-center justify-between gap-2"><div><div class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">Diff 润色</div><div class="text-xs mt-0.5" :style="{ color: 'var(--text-muted)' }">{{ diffTargetLabel }}</div></div><button type="button" @click="runPolishDiff" :disabled="isBusy || modelUnavailable || !diffTargetReady" class="btn-accent text-xs px-2.5 py-1.5 shrink-0">{{ isDiffLoading ? '生成中...' : diffResult ? '重新生成' : '生成审阅' }}</button></div><textarea ref="diffInstructionRef" v-model="diffInstruction" rows="2" placeholder="例如：增强画面感，保留人物语气" class="w-full text-xs border rounded-lg px-3 py-2 resize-none outline-none transition-colors duration-150 focus:ring-2 focus:ring-brand/25" :style="{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-clr)', color: 'var(--text-primary)' }"></textarea></div>
@@ -235,7 +246,7 @@ async function handleKeydown(event: KeyboardEvent) {
       </template>
       <div v-if="aiStore.error" class="rounded-xl px-3 py-2.5 text-sm" :style="{ backgroundColor: '#f9e3dd', color: '#a0432c' }">{{ aiStore.error }}</div>
     </div>
-    <AgentPanel v-else :book-id="props.bookId" :chapter-id="props.chapterId" :chapter-content="chapterContent" :model="aiStore.selectedModel" :blocked="aiStore.isLoading || isDiffLoading" @review="openDiffReview" />
+    <AgentPanel v-else :book-id="props.bookId" :chapter-id="props.chapterId" :chapter-content="chapterContent" :model="aiStore.selectedModel" :blocked="aiStore.isLoading || isDiffLoading || sceneBusy" @review="openDiffReview" />
     <div v-if="panelMode === 'chat'" class="border-t p-3.5" :style="{ borderTopColor: 'var(--border-clr)' }"><div class="rounded-xl border transition-colors duration-150" :style="{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border-clr)' }"><textarea v-model="inputText" @keydown="handleKeydown" @compositionstart="isComposing = true" @compositionend="onCompositionEnd" placeholder="输入问题，Enter 发送，Shift+Enter 换行" rows="2" class="w-full text-sm px-3.5 py-2.5 resize-none outline-none bg-transparent border-none" :style="{ color: 'var(--text-primary)' }"></textarea><div class="flex justify-between items-center px-3 pb-2.5"><button type="button" @click="aiStore.clearChat()" class="text-xs transition-opacity hover:opacity-80" :style="{ color: 'var(--text-muted)' }">清空问答</button><button type="button" @click="sendChat" :disabled="isBusy || modelUnavailable || !inputText.trim()" class="btn-primary text-xs px-3.5 py-1.5">{{ aiStore.isLoading ? '生成中...' : '发送' }}</button></div></div></div>
     <div v-else-if="panelMode === 'write'" class="border-t px-4 py-2.5 text-[11px]" :style="{ borderTopColor: 'var(--border-clr)', color: 'var(--text-muted)' }">选择一个写作工具，结果会先在这里审阅，再写回正文。</div>
   </div>

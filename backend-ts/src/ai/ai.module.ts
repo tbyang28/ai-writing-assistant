@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AiController } from './ai.controller';
+import { SceneWritingService } from './scene/scene-writing.service';
 import { AgentService } from './agent/agent.service';
 import { AgentRuntimeService } from './agent/agent-runtime.service';
 import { StoryToolsService } from './agent/story-tools';
@@ -15,6 +16,6 @@ import { AgentProposalsModule } from './agent/agent-proposals.module';
 @Module({
   imports: [RagModule, AgentProposalsModule],
   controllers: [AiController],
-  providers: [StoryMemoryService, StoryToolsService, AgentRuntimeService, AgentService],
+  providers: [StoryMemoryService, StoryToolsService, AgentRuntimeService, AgentService, SceneWritingService],
 })
 export class AiModule {}
